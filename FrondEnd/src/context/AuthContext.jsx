@@ -121,12 +121,12 @@ export function AuthProvider({ children }) {
     }
   };
 
-  const requestPasswordResetOtp = async (username) => {
+  const requestPasswordResetOtp = async (identifier) => {
     try {
       return await request("/api/auth/forgot-password/request-otp", {
         method: "POST",
         body: JSON.stringify({
-          username
+          username: identifier
         })
       });
     } catch (error) {

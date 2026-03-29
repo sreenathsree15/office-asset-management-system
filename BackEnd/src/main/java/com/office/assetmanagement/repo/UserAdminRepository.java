@@ -9,5 +9,12 @@ public interface UserAdminRepository extends JpaRepository<UserAdmin, Integer> {
 
     Optional<UserAdmin> findByUsernameAndDeleteStatus(String username, String deleteStatus);
 
+    Optional<UserAdmin> findByUsernameIgnoreCaseAndDeleteStatus(String username, String deleteStatus);
+
+    Optional<UserAdmin> findByRecoveryEmailIgnoreCaseAndDeleteStatus(
+            String recoveryEmail,
+            String deleteStatus
+    );
+
     List<UserAdmin> findAllByDeleteStatus(String deleteStatus);
 }

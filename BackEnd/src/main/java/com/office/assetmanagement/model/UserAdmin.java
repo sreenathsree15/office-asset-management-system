@@ -33,6 +33,9 @@ public class UserAdmin {
     @Column(name = "password", length = 100)
     private String password;
 
+    @Column(name = "recovery_email", length = 120)
+    private String recoveryEmail;
+
     @Column(name = "delete_status", length = 1)
     private String deleteStatus;
 

@@ -37,6 +37,8 @@ public class UserAdminServiceImpl implements UserAdminService {
     private static final String ADMIN_ROLE = "ADMIN";
     private static final String OTP_CHARACTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     private static final Pattern BCRYPT_PATTERN = Pattern.compile("^\\$2[aby]\\$.{56}$");
+    private static final Pattern EMAIL_PATTERN =
+            Pattern.compile("^[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}$", Pattern.CASE_INSENSITIVE);
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     private final UserAdminRepository userAdminRepository;
@@ -46,9 +48,6 @@ public class UserAdminServiceImpl implements UserAdminService {
 
     @Value("${app.reset.otp.length}")
     private int otpLength;
-
-    @Value("${app.mail.reset-to:}")
-    private String resetRecipientEmail;
 
     @Override
     public UserDetails loadUserByUsername(String username) {
@@ -95,25 +94,21 @@ public class UserAdminServiceImpl implements UserAdminService {
     @Override
     @Transactional
     public BasicMessageResponse sendPasswordResetOtp(ForgotPasswordOtpRequest forgotPasswordOtpRequest) {
-        String username = normalize(forgotPasswordOtpRequest.getUsername());
-        String email = normalize(resetRecipientEmail);
+        String identifier = normalize(forgotPasswordOtpRequest.getUsername());
 
-        if (!StringUtils.hasText(username)) {
-            throw new IllegalArgumentException("Username is required.");
+        if (!StringUtils.hasText(identifier)) {
+            throw new IllegalArgumentException("Username or recovery email is required.");
         }
 
-        if (!StringUtils.hasText(email)) {
-            throw new IllegalStateException("Password reset recipient email is not configured.");
-        }
-
-        UserAdmin userAdmin = findActiveUserByUsername(username);
+        UserAdmin userAdmin = findActiveUserByIdentifier(identifier);
+        String recipientEmail = resolvePasswordResetRecipient(userAdmin);
         String otp = generateOtp();
 
         userAdmin.setOtp(otp);
         userAdminRepository.save(userAdmin);
 
         try {
-            mailService.sendOtpMail(email, userAdmin.getUsername(), otp);
+            mailService.sendOtpMail(recipientEmail, userAdmin.getUsername(), otp);
         } catch (IllegalStateException exception) {
             clearOtp(userAdmin);
             throw exception;
@@ -123,20 +118,20 @@ public class UserAdminServiceImpl implements UserAdminService {
         }
 
         return BasicMessageResponse.builder()
-                .message("OTP sent successfully to the configured administrator email.")
+                .message("OTP sent successfully.")
                 .build();
     }
 
     @Override
     public BasicMessageResponse verifyPasswordResetOtp(VerifyOtpRequest verifyOtpRequest) {
-        String username = normalize(verifyOtpRequest.getUsername());
+        String identifier = normalize(verifyOtpRequest.getUsername());
         String otp = normalizeOtp(verifyOtpRequest.getOtp());
 
-        if (!StringUtils.hasText(username) || !StringUtils.hasText(otp)) {
-            throw new IllegalArgumentException("Username and OTP are required.");
+        if (!StringUtils.hasText(identifier) || !StringUtils.hasText(otp)) {
+            throw new IllegalArgumentException("Username or recovery email and OTP are required.");
         }
 
-        UserAdmin userAdmin = findActiveUserByUsername(username);
+        UserAdmin userAdmin = findActiveUserByIdentifier(identifier);
 
         if (!otpMatches(userAdmin, otp)) {
             throw new IllegalArgumentException("Invalid OTP.");
@@ -150,13 +145,13 @@ public class UserAdminServiceImpl implements UserAdminService {
     @Override
     @Transactional
     public BasicMessageResponse resetPassword(ResetPasswordRequest resetPasswordRequest) {
-        String username = normalize(resetPasswordRequest.getUsername());
+        String identifier = normalize(resetPasswordRequest.getUsername());
         String otp = normalizeOtp(resetPasswordRequest.getOtp());
         String newPassword = resetPasswordRequest.getNewPassword();
         String confirmPassword = resetPasswordRequest.getConfirmPassword();
 
-        if (!StringUtils.hasText(username) || !StringUtils.hasText(otp)) {
-            throw new IllegalArgumentException("Username and OTP are required.");
+        if (!StringUtils.hasText(identifier) || !StringUtils.hasText(otp)) {
+            throw new IllegalArgumentException("Username or recovery email and OTP are required.");
         }
 
         if (!StringUtils.hasText(newPassword) || !StringUtils.hasText(confirmPassword)) {
@@ -167,7 +162,7 @@ public class UserAdminServiceImpl implements UserAdminService {
             throw new IllegalArgumentException("New password and confirm password must match.");
         }
 
-        UserAdmin userAdmin = findActiveUserByUsername(username);
+        UserAdmin userAdmin = findActiveUserByIdentifier(identifier);
 
         if (!otpMatches(userAdmin, otp)) {
             throw new IllegalArgumentException("Invalid OTP.");
@@ -188,8 +183,19 @@ public class UserAdminServiceImpl implements UserAdminService {
         List<UserAdmin> usersToUpdate = new ArrayList<>();
 
         for (UserAdmin userAdmin : userAdminRepository.findAllByDeleteStatus(ACTIVE_STATUS)) {
+            boolean requiresUpdate = false;
+
             if (StringUtils.hasText(userAdmin.getPassword()) && !isBcryptHash(userAdmin.getPassword())) {
                 userAdmin.setPassword(passwordEncoder.encode(userAdmin.getPassword()));
+                requiresUpdate = true;
+            }
+
+            if (!StringUtils.hasText(userAdmin.getRecoveryEmail()) && isEmailAddress(userAdmin.getUsername())) {
+                userAdmin.setRecoveryEmail(normalizeEmail(userAdmin.getUsername()));
+                requiresUpdate = true;
+            }
+
+            if (requiresUpdate) {
                 usersToUpdate.add(userAdmin);
             }
         }
@@ -200,8 +206,14 @@ public class UserAdminServiceImpl implements UserAdminService {
     }
 
     private UserAdmin findActiveUserByUsername(String username) {
-        return userAdminRepository.findByUsernameAndDeleteStatus(username, ACTIVE_STATUS)
+        return userAdminRepository.findByUsernameIgnoreCaseAndDeleteStatus(username, ACTIVE_STATUS)
                 .orElseThrow(() -> new UsernameNotFoundException("Invalid Username."));
+    }
+
+    private UserAdmin findActiveUserByIdentifier(String identifier) {
+        return userAdminRepository.findByUsernameIgnoreCaseAndDeleteStatus(identifier, ACTIVE_STATUS)
+                .or(() -> userAdminRepository.findByRecoveryEmailIgnoreCaseAndDeleteStatus(identifier, ACTIVE_STATUS))
+                .orElseThrow(() -> new UsernameNotFoundException("Invalid username or recovery email."));
     }
 
     private boolean passwordMatches(String rawPassword, UserAdmin userAdmin) {
@@ -241,6 +253,18 @@ public class UserAdminServiceImpl implements UserAdminService {
         return BCRYPT_PATTERN.matcher(value).matches();
     }
 
+    private String resolvePasswordResetRecipient(UserAdmin userAdmin) {
+        if (StringUtils.hasText(userAdmin.getRecoveryEmail())) {
+            return normalizeEmail(userAdmin.getRecoveryEmail());
+        }
+
+        if (isEmailAddress(userAdmin.getUsername())) {
+            return normalizeEmail(userAdmin.getUsername());
+        }
+
+        throw new IllegalStateException("Recovery email is not configured for this account.");
+    }
+
     private String generateOtp() {
         int effectiveOtpLength = Math.max(6, otpLength);
         StringBuilder otpBuilder = new StringBuilder(effectiveOtpLength);
@@ -262,7 +286,15 @@ public class UserAdminServiceImpl implements UserAdminService {
         return value == null ? "" : value.trim();
     }
 
+    private String normalizeEmail(String value) {
+        return normalize(value).toLowerCase(Locale.ROOT);
+    }
+
     private String normalizeOtp(String value) {
         return normalize(value).toUpperCase(Locale.ROOT);
+    }
+
+    private boolean isEmailAddress(String value) {
+        return EMAIL_PATTERN.matcher(normalize(value)).matches();
     }
 }

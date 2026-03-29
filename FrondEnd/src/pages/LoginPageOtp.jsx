@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import loginArtwork from "../images/Gemini_Generated_Image_10dkob10dkob10dk.png";
+
+const MESSAGE_TIMEOUT_MS = 5000;
 
 const RESET_STEPS = {
   REQUEST_OTP: "request-otp",
@@ -39,6 +41,62 @@ export default function LoginPageOtp() {
   const [notice, setNotice] = useState("");
   const [forgotPasswordError, setForgotPasswordError] = useState("");
   const [forgotPasswordNotice, setForgotPasswordNotice] = useState("");
+
+  useEffect(() => {
+    if (!error) {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      setError("");
+    }, MESSAGE_TIMEOUT_MS);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [error]);
+
+  useEffect(() => {
+    if (!notice) {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      setNotice("");
+    }, MESSAGE_TIMEOUT_MS);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [notice]);
+
+  useEffect(() => {
+    if (!forgotPasswordError) {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      setForgotPasswordError("");
+    }, MESSAGE_TIMEOUT_MS);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [forgotPasswordError]);
+
+  useEffect(() => {
+    if (!forgotPasswordNotice) {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      setForgotPasswordNotice("");
+    }, MESSAGE_TIMEOUT_MS);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [forgotPasswordNotice]);
 
   const handleLoginChange = (event) => {
     const { name, value } = event.target;
@@ -94,7 +152,7 @@ export default function LoginPageOtp() {
 
   const handleRequestOtp = async () => {
     if (!resetForm.username.trim()) {
-      setForgotPasswordError("Enter the username.");
+      setForgotPasswordError("Enter the username or recovery email.");
       setForgotPasswordNotice("");
       return;
     }
@@ -165,7 +223,6 @@ export default function LoginPageOtp() {
       setNotice(`${response.message} Please sign in with the new password.`);
       setLoginForm((current) => ({
         ...current,
-        username: resetForm.username.trim(),
         password: ""
       }));
     } catch (resetError) {
@@ -278,9 +335,9 @@ export default function LoginPageOtp() {
                 </h3>
                 <p className="auth-modal-copy">
                   {resetStep === RESET_STEPS.REQUEST_OTP
-                    ? "Enter the username. The OTP will be sent to the configured administrator email."
+                    ? "Enter the username or recovery email. The OTP will be sent to the registered email for that account."
                     : resetStep === RESET_STEPS.VERIFY_OTP
-                      ? "Enter the OTP sent to your email address to continue."
+                      ? "Enter the OTP sent to the registered email for this account."
                       : "Set a new password for this administrator account."}
                 </p>
               </div>
@@ -299,12 +356,12 @@ export default function LoginPageOtp() {
               {resetStep === RESET_STEPS.REQUEST_OTP ? (
                 <>
                   <label className="field">
-                    <span>Username</span>
+                    <span>Username or Recovery Email</span>
                     <input
                       autoComplete="username"
                       name="username"
                       onChange={handleResetChange}
-                      placeholder="Enter username"
+                      placeholder="Enter username or recovery email"
                       type="text"
                       value={resetForm.username}
                     />
@@ -315,7 +372,7 @@ export default function LoginPageOtp() {
               {resetStep === RESET_STEPS.VERIFY_OTP ? (
                 <>
                   <label className="field">
-                    <span>Username</span>
+                    <span>Username or Recovery Email</span>
                     <input
                       className="readonly-field"
                       name="username"
@@ -342,7 +399,7 @@ export default function LoginPageOtp() {
               {resetStep === RESET_STEPS.RESET_PASSWORD ? (
                 <>
                   <label className="field">
-                    <span>Username</span>
+                    <span>Username or Recovery Email</span>
                     <input
                       className="readonly-field"
                       name="username"

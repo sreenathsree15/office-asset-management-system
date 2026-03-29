@@ -330,6 +330,7 @@ input::placeholder {
   padding: 0.85rem 1rem;
   border-radius: 14px;
   font-size: 0.95rem;
+  animation: messageFadeOut 5s forwards;
 }
 
 .error-message {
@@ -340,6 +341,28 @@ input::placeholder {
 .success-message {
   background: rgba(27, 97, 64, 0.42);
   color: #d1ffe2;
+}
+
+@keyframes messageFadeOut {
+  0% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  8% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  78% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
 }
 
 .loading-card {

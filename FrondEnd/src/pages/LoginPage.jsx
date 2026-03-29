@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import loginArtwork from "../images/Gemini_Generated_Image_10dkob10dkob10dk.png";
 
@@ -37,6 +37,34 @@ export default function LoginPage() {
   const [isResetSubmitting, setIsResetSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    if (!error) {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      setError("");
+    }, 5000);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [error]);
+
+  useEffect(() => {
+    if (!notice) {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      setNotice("");
+    }, 5000);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [notice]);
   const [forgotPasswordError, setForgotPasswordError] = useState("");
   const [forgotPasswordNotice, setForgotPasswordNotice] = useState("");
 
