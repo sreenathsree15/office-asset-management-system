@@ -1,0 +1,19 @@
+# Maven
+.m2/
+
+# Node
+node_modules/
+
+# Build
+target/
+dist/
+
+# Environment
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
