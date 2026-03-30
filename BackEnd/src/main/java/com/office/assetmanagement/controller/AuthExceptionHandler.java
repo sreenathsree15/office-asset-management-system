@@ -6,6 +6,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.mail.MailException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.validation.FieldError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -22,6 +24,20 @@ public class AuthExceptionHandler {
     public ResponseEntity<Map<String, String>> handleBadRequest(IllegalArgumentException exception) {
         return ResponseEntity.badRequest()
                 .body(Map.of("error", exception.getMessage()));
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<Map<String, String>> handleValidation(MethodArgumentNotValidException exception) {
+        String message = exception.getBindingResult()
+                .getFieldErrors()
+                .stream()
+                .map(FieldError::getDefaultMessage)
+                .filter(value -> value != null && !value.isBlank())
+                .findFirst()
+                .orElse("Validation failed.");
+
+        return ResponseEntity.badRequest()
+                .body(Map.of("error", message));
     }
 
     @ExceptionHandler({IllegalStateException.class, MailException.class})

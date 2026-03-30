@@ -49,6 +49,9 @@ public class UserAdminServiceImpl implements UserAdminService {
     @Value("${app.reset.otp.length}")
     private int otpLength;
 
+    @Value("${app.admin.recovery-email:}")
+    private String configuredRecoveryEmail;
+
     @Override
     public UserDetails loadUserByUsername(String username) {
         UserAdmin userAdmin = findActiveUserByUsername(normalize(username));
@@ -181,6 +184,7 @@ public class UserAdminServiceImpl implements UserAdminService {
     @Transactional
     public void migrateLegacyPasswords() {
         List<UserAdmin> usersToUpdate = new ArrayList<>();
+        String normalizedConfiguredRecoveryEmail = normalizeConfiguredRecoveryEmail();
 
         for (UserAdmin userAdmin : userAdminRepository.findAllByDeleteStatus(ACTIVE_STATUS)) {
             boolean requiresUpdate = false;
@@ -190,9 +194,14 @@ public class UserAdminServiceImpl implements UserAdminService {
                 requiresUpdate = true;
             }
 
-            if (!StringUtils.hasText(userAdmin.getRecoveryEmail()) && isEmailAddress(userAdmin.getUsername())) {
-                userAdmin.setRecoveryEmail(normalizeEmail(userAdmin.getUsername()));
-                requiresUpdate = true;
+            if (!StringUtils.hasText(userAdmin.getRecoveryEmail())) {
+                if (StringUtils.hasText(normalizedConfiguredRecoveryEmail)) {
+                    userAdmin.setRecoveryEmail(normalizedConfiguredRecoveryEmail);
+                    requiresUpdate = true;
+                } else if (isEmailAddress(userAdmin.getUsername())) {
+                    userAdmin.setRecoveryEmail(normalizeEmail(userAdmin.getUsername()));
+                    requiresUpdate = true;
+                }
             }
 
             if (requiresUpdate) {
@@ -213,6 +222,7 @@ public class UserAdminServiceImpl implements UserAdminService {
     private UserAdmin findActiveUserByIdentifier(String identifier) {
         return userAdminRepository.findByUsernameIgnoreCaseAndDeleteStatus(identifier, ACTIVE_STATUS)
                 .or(() -> userAdminRepository.findByRecoveryEmailIgnoreCaseAndDeleteStatus(identifier, ACTIVE_STATUS))
+                .or(() -> findSingleActiveUserByConfiguredRecoveryEmail(identifier))
                 .orElseThrow(() -> new UsernameNotFoundException("Invalid username or recovery email."));
     }
 
@@ -258,6 +268,10 @@ public class UserAdminServiceImpl implements UserAdminService {
             return normalizeEmail(userAdmin.getRecoveryEmail());
         }
 
+        if (StringUtils.hasText(normalizeConfiguredRecoveryEmail())) {
+            return normalizeConfiguredRecoveryEmail();
+        }
+
         if (isEmailAddress(userAdmin.getUsername())) {
             return normalizeEmail(userAdmin.getUsername());
         }
@@ -290,11 +304,43 @@ public class UserAdminServiceImpl implements UserAdminService {
         return normalize(value).toLowerCase(Locale.ROOT);
     }
 
+    private String normalizeConfiguredRecoveryEmail() {
+        return StringUtils.hasText(configuredRecoveryEmail)
+                ? normalizeEmail(configuredRecoveryEmail)
+                : "";
+    }
+
     private String normalizeOtp(String value) {
         return normalize(value).toUpperCase(Locale.ROOT);
     }
 
     private boolean isEmailAddress(String value) {
         return EMAIL_PATTERN.matcher(normalize(value)).matches();
+    }
+
+    private java.util.Optional<UserAdmin> findSingleActiveUserByConfiguredRecoveryEmail(String identifier) {
+        String normalizedConfiguredRecoveryEmail = normalizeConfiguredRecoveryEmail();
+
+        if (
+                !StringUtils.hasText(normalizedConfiguredRecoveryEmail)
+                        || !normalizedConfiguredRecoveryEmail.equals(normalizeEmail(identifier))
+        ) {
+            return java.util.Optional.empty();
+        }
+
+        List<UserAdmin> activeUsers = userAdminRepository.findAllByDeleteStatus(ACTIVE_STATUS);
+
+        if (activeUsers.size() != 1) {
+            return java.util.Optional.empty();
+        }
+
+        UserAdmin singleActiveUser = activeUsers.get(0);
+
+        if (!StringUtils.hasText(singleActiveUser.getRecoveryEmail())) {
+            singleActiveUser.setRecoveryEmail(normalizedConfiguredRecoveryEmail);
+            userAdminRepository.save(singleActiveUser);
+        }
+
+        return java.util.Optional.of(singleActiveUser);
     }
 }
