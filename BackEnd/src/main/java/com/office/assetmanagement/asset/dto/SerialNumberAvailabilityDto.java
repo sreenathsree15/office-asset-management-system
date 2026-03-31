@@ -1,0 +1,19 @@
+package com.office.assetmanagement.asset.dto;
+
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
+@Getter
+@Setter
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class SerialNumberAvailabilityDto {
+
+    private boolean available;
+
+    private String message;
+}

@@ -57,6 +57,30 @@ public class Asset {
     @Column(name = "status", nullable = false, length = 30)
     private String status;
 
+    @Column(name = "assigned_to", length = 120)
+    private String assignedTo;
+
+    @Column(name = "section_name", length = 120)
+    private String section;
+
+    @Column(name = "date_of_issue")
+    private LocalDate dateOfIssue;
+
+    @Column(name = "expiry_date")
+    private LocalDate expiryDate;
+
+    @Column(name = "expiry_reason", length = 250)
+    private String expiryReason;
+
+    @Column(name = "damage_date")
+    private LocalDate damageDate;
+
+    @Column(name = "damage_description", length = 500)
+    private String damageDescription;
+
+    @Column(name = "damage_severity", length = 30)
+    private String damageSeverity;
+
     @Column(name = "remarks", length = 500)
     private String remarks;
 
