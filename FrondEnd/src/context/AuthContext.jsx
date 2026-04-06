@@ -169,6 +169,22 @@ export function AuthProvider({ children }) {
     setUser(null);
   };
 
+  const updateSession = (updates) => {
+    setUser((current) => {
+      if (!current) {
+        return current;
+      }
+
+      const nextSession = {
+        ...current,
+        ...updates
+      };
+
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(nextSession));
+      return nextSession;
+    });
+  };
+
   const value = {
     user,
     isAuthenticated: Boolean(user),
@@ -177,6 +193,7 @@ export function AuthProvider({ children }) {
     requestPasswordResetOtp,
     verifyPasswordResetOtp,
     resetPasswordWithOtp,
+    updateSession,
     logout
   };
 

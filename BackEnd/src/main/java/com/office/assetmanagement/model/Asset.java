@@ -63,6 +63,9 @@ public class Asset {
     @Column(name = "section_name", length = 120)
     private String section;
 
+    @Column(name = "seat_number", length = 80)
+    private String seatNumber;
+
     @Column(name = "date_of_issue")
     private LocalDate dateOfIssue;
 

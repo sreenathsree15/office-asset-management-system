@@ -18,11 +18,15 @@ import com.office.assetmanagement.model.Asset;
 import com.office.assetmanagement.model.AssetReturnRecord;
 import com.office.assetmanagement.model.AssetStatusHistory;
 import com.office.assetmanagement.model.Category;
+import com.office.assetmanagement.model.Section;
 import com.office.assetmanagement.repo.AssetRepository;
 import com.office.assetmanagement.repo.AssetReturnRecordRepository;
 import com.office.assetmanagement.repo.AssetStatusHistoryRepository;
 import com.office.assetmanagement.repo.CategoryRepository;
+import com.office.assetmanagement.repo.SectionRepository;
+import com.office.assetmanagement.repo.SeatNumberRepository;
 import com.office.assetmanagement.service.AssetService;
+import com.office.assetmanagement.util.AssetDisplayIdUtil;
 import com.office.assetmanagement.util.SerialNumberGenerator;
 import jakarta.transaction.Transactional;
 import java.time.LocalDate;
@@ -43,14 +47,22 @@ public class AssetServiceImpl implements AssetService {
     private static final String DAMAGED_STATUS = "damaged";
     private static final String EXPIRED_STATUS = "expired";
     private static final String EDIT_SOURCE = "EDIT_ASSET";
+    private static final String NEW_ASSET_SOURCE = "NEW_ASSET";
+    private static final String ASSIGN_SOURCE = "ASSIGN_ASSET";
+    private static final String DAMAGE_SOURCE = "DAMAGE_ASSET";
+    private static final String EXPIRE_SOURCE = "EXPIRE_ASSET";
+    private static final String RETURN_SOURCE = "RETURN_ASSET";
     private static final String GOOD_CONDITION = "good";
     private static final String DAMAGED_CONDITION = "damaged";
     private static final int MAX_SERIAL_GENERATION_ATTEMPTS = 10000;
+    private static final Set<String> SEAT_REQUIRED_CATEGORIES = Set.of("desktop", "printer", "ups");
 
     private final AssetRepository assetRepository;
     private final AssetReturnRecordRepository assetReturnRecordRepository;
     private final AssetStatusHistoryRepository assetStatusHistoryRepository;
     private final CategoryRepository categoryRepository;
+    private final SectionRepository sectionRepository;
+    private final SeatNumberRepository seatNumberRepository;
     private final SerialNumberGenerator serialNumberGenerator;
 
     @Override
@@ -76,7 +88,16 @@ public class AssetServiceImpl implements AssetService {
                 assetSingleDto.getRemarks()
         );
 
-        return assetRepository.save(asset);
+        Asset savedAsset = assetRepository.save(asset);
+        assetStatusHistoryRepository.save(createHistoryEntry(
+                savedAsset,
+                "New",
+                capitalize(AVAILABLE_STATUS),
+                NEW_ASSET_SOURCE,
+                "Asset added to inventory."
+        ));
+
+        return savedAsset;
     }
 
     @Override
@@ -106,7 +127,18 @@ public class AssetServiceImpl implements AssetService {
             ));
         }
 
-        return assetRepository.saveAll(assetsToSave);
+        List<Asset> savedAssets = assetRepository.saveAll(assetsToSave);
+        assetStatusHistoryRepository.saveAll(savedAssets.stream()
+                .map(asset -> createHistoryEntry(
+                        asset,
+                        "New",
+                        capitalize(AVAILABLE_STATUS),
+                        NEW_ASSET_SOURCE,
+                        "Asset added to inventory through bulk import."
+                ))
+                .toList());
+
+        return savedAssets;
     }
 
     @Override
@@ -155,6 +187,7 @@ public class AssetServiceImpl implements AssetService {
                         .categoryName(asset.getCategory().getName())
                         .assignedTo(asset.getAssignedTo())
                         .section(asset.getSection())
+                        .seatNumber(asset.getSeatNumber())
                         .dateOfIssue(asset.getDateOfIssue())
                         .build())
                 .toList();
@@ -199,11 +232,16 @@ public class AssetServiceImpl implements AssetService {
             }
 
             asset.setAssignedTo(assignedTo);
+
+            if (!requiresSeatNumber(category.getName())) {
+                asset.setSeatNumber(null);
+            }
         }
 
         if (!ASSIGNED_STATUS.equals(updatedStatus)) {
             asset.setAssignedTo(null);
             asset.setSection(null);
+            asset.setSeatNumber(null);
             asset.setDateOfIssue(null);
         }
 
@@ -233,12 +271,13 @@ public class AssetServiceImpl implements AssetService {
         Asset savedAsset = assetRepository.save(asset);
 
         if (!previousStatus.equals(updatedStatus)) {
-            assetStatusHistoryRepository.save(AssetStatusHistory.builder()
-                    .asset(savedAsset)
-                    .oldStatus(capitalize(previousStatus))
-                    .newStatus(capitalize(updatedStatus))
-                    .changeSource(EDIT_SOURCE)
-                    .build());
+            assetStatusHistoryRepository.save(createHistoryEntry(
+                    savedAsset,
+                    capitalize(previousStatus),
+                    capitalize(updatedStatus),
+                    EDIT_SOURCE,
+                    "Status updated through Edit Asset."
+            ));
         }
 
         return savedAsset;
@@ -270,14 +309,24 @@ public class AssetServiceImpl implements AssetService {
     public BasicMessageResponse assignAsset(AssetAssignDto assetAssignDto) {
         Asset asset = assetRepository.findByIdAndStatusIgnoreCase(assetAssignDto.getAssetId(), AVAILABLE_STATUS)
                 .orElseThrow(() -> new IllegalArgumentException("Selected asset is not currently available."));
+        String sectionName = normalize(assetAssignDto.getSection());
+        String normalizedSeatNumber = normalize(assetAssignDto.getSeatNumber());
 
         asset.setStatus(ASSIGNED_STATUS);
         asset.setAssignedTo(normalize(assetAssignDto.getAssignedTo()));
-        asset.setSection(normalize(assetAssignDto.getSection()));
+        asset.setSection(sectionName);
+        asset.setSeatNumber(resolveAssignedSeatNumber(asset.getCategory().getName(), sectionName, normalizedSeatNumber));
         asset.setDateOfIssue(assetAssignDto.getDateOfIssue());
         asset.setRemarks(resolveUpdatedRemarks(asset.getRemarks(), assetAssignDto.getRemarks()));
 
-        assetRepository.save(asset);
+        Asset savedAsset = assetRepository.save(asset);
+        assetStatusHistoryRepository.save(createHistoryEntry(
+                savedAsset,
+                capitalize(AVAILABLE_STATUS),
+                capitalize(ASSIGNED_STATUS),
+                ASSIGN_SOURCE,
+                buildAssignmentHistoryDetails(savedAsset)
+        ));
 
         return BasicMessageResponse.builder()
                 .message("Asset assigned successfully.")
@@ -298,6 +347,7 @@ public class AssetServiceImpl implements AssetService {
         }
 
         String normalizedSeverity = normalizeSeverity(assetDamageDto.getSeverity());
+        String oldStatus = capitalize(normalizeStatus(asset.getStatus()));
 
         asset.setStatus(DAMAGED_STATUS);
         asset.setDamageDate(assetDamageDto.getDamageDate());
@@ -306,9 +356,17 @@ public class AssetServiceImpl implements AssetService {
         asset.setRemarks(resolveUpdatedRemarks(asset.getRemarks(), assetDamageDto.getRemarks()));
         asset.setAssignedTo(null);
         asset.setSection(null);
+        asset.setSeatNumber(null);
         asset.setDateOfIssue(null);
 
-        assetRepository.save(asset);
+        Asset savedAsset = assetRepository.save(asset);
+        assetStatusHistoryRepository.save(createHistoryEntry(
+                savedAsset,
+                oldStatus,
+                capitalize(DAMAGED_STATUS),
+                DAMAGE_SOURCE,
+                buildDamageHistoryDetails(savedAsset)
+        ));
 
         return BasicMessageResponse.builder()
                 .message("Asset marked as damaged successfully.")
@@ -328,12 +386,25 @@ public class AssetServiceImpl implements AssetService {
             throw new IllegalArgumentException("Expiry date cannot be before purchase date.");
         }
 
+        String oldStatus = capitalize(normalizeStatus(asset.getStatus()));
+
         asset.setStatus(EXPIRED_STATUS);
         asset.setExpiryDate(assetExpireDto.getExpiryDate());
         asset.setExpiryReason(normalizeOptional(assetExpireDto.getReason()));
         asset.setRemarks(resolveUpdatedRemarks(asset.getRemarks(), assetExpireDto.getRemarks()));
+        asset.setAssignedTo(null);
+        asset.setSection(null);
+        asset.setSeatNumber(null);
+        asset.setDateOfIssue(null);
 
-        assetRepository.save(asset);
+        Asset savedAsset = assetRepository.save(asset);
+        assetStatusHistoryRepository.save(createHistoryEntry(
+                savedAsset,
+                oldStatus,
+                capitalize(EXPIRED_STATUS),
+                EXPIRE_SOURCE,
+                buildExpiryHistoryDetails(savedAsset)
+        ));
 
         return BasicMessageResponse.builder()
                 .message("Asset marked as expired successfully.")
@@ -354,11 +425,15 @@ public class AssetServiceImpl implements AssetService {
 
         String normalizedCondition = normalizeCondition(assetReturnDto.getConditionAtReturn());
         String updatedStatus = GOOD_CONDITION.equals(normalizedCondition) ? AVAILABLE_STATUS : DAMAGED_STATUS;
+        String previousAssignedTo = normalizeOptional(asset.getAssignedTo());
+        String previousSection = normalizeOptional(asset.getSection());
+        String previousSeatNumber = normalizeOptional(asset.getSeatNumber());
 
         AssetReturnRecord assetReturnRecord = AssetReturnRecord.builder()
                 .asset(asset)
-                .assignedTo(normalizeOptional(asset.getAssignedTo()))
-                .section(normalizeOptional(asset.getSection()))
+                .assignedTo(previousAssignedTo)
+                .section(previousSection)
+                .seatNumber(previousSeatNumber)
                 .dateOfIssue(asset.getDateOfIssue())
                 .returnDate(returnDate)
                 .conditionAtReturn(capitalize(normalizedCondition))
@@ -368,10 +443,23 @@ public class AssetServiceImpl implements AssetService {
         asset.setStatus(updatedStatus);
         asset.setAssignedTo(null);
         asset.setSection(null);
+        asset.setSeatNumber(null);
         asset.setDateOfIssue(null);
 
-        assetRepository.save(asset);
+        Asset savedAsset = assetRepository.save(asset);
         assetReturnRecordRepository.save(assetReturnRecord);
+        assetStatusHistoryRepository.save(createHistoryEntry(
+                savedAsset,
+                capitalize(ASSIGNED_STATUS),
+                capitalize(updatedStatus),
+                RETURN_SOURCE,
+                buildReturnHistoryDetails(
+                        capitalize(normalizedCondition),
+                        previousAssignedTo,
+                        previousSection,
+                        previousSeatNumber
+                )
+        ));
 
         return BasicMessageResponse.builder()
                 .message("Asset returned successfully. Status updated to %s.".formatted(capitalize(updatedStatus)))
@@ -398,6 +486,25 @@ public class AssetServiceImpl implements AssetService {
         if (warrantyExpiryDate.isBefore(purchaseDate)) {
             throw new IllegalArgumentException("Warranty expiry date cannot be before purchase date.");
         }
+    }
+
+    private String resolveAssignedSeatNumber(String categoryName, String sectionName, String seatNumber) {
+        if (!requiresSeatNumber(categoryName)) {
+            return null;
+        }
+
+        if (seatNumber.isEmpty()) {
+            throw new IllegalArgumentException("Seat number is required for Desktop, Printer, and UPS assets.");
+        }
+
+        Section section = sectionRepository.findBySectionNameIgnoreCase(sectionName)
+                .orElseThrow(() -> new IllegalArgumentException("Selected section does not exist."));
+
+        if (!seatNumberRepository.existsBySectionIdAndSeatNumberIgnoreCase(section.getId(), seatNumber)) {
+            throw new IllegalArgumentException("Selected seat number does not belong to the chosen section.");
+        }
+
+        return seatNumber;
     }
 
     private Asset buildAsset(
@@ -469,6 +576,73 @@ public class AssetServiceImpl implements AssetService {
         return normalizedNewRemarks;
     }
 
+    private AssetStatusHistory createHistoryEntry(
+            Asset asset,
+            String oldStatus,
+            String newStatus,
+            String source,
+            String details
+    ) {
+        return AssetStatusHistory.builder()
+                .asset(asset)
+                .oldStatus(oldStatus)
+                .newStatus(newStatus)
+                .changeSource(source)
+                .details(normalizeOptional(details))
+                .build();
+    }
+
+    private String buildAssignmentHistoryDetails(Asset asset) {
+        String seatNumber = normalizeOptional(asset.getSeatNumber());
+        return seatNumber == null
+                ? "Assigned to %s in %s.".formatted(asset.getAssignedTo(), asset.getSection())
+                : "Assigned to %s in %s at seat %s.".formatted(
+                        asset.getAssignedTo(),
+                        asset.getSection(),
+                        seatNumber
+                );
+    }
+
+    private String buildDamageHistoryDetails(Asset asset) {
+        String description = normalizeOptional(asset.getDamageDescription());
+        return description == null
+                ? "Severity: %s.".formatted(asset.getDamageSeverity())
+                : "Severity: %s. %s".formatted(asset.getDamageSeverity(), description);
+    }
+
+    private String buildExpiryHistoryDetails(Asset asset) {
+        String reason = normalizeOptional(asset.getExpiryReason());
+        return reason == null ? "Asset marked as expired." : "Reason: %s".formatted(reason);
+    }
+
+    private String buildReturnHistoryDetails(
+            String condition,
+            String assignedTo,
+            String section,
+            String seatNumber
+    ) {
+        StringBuilder builder = new StringBuilder("Condition: ").append(condition);
+
+        if (assignedTo != null) {
+            builder.append(". Returned from ").append(assignedTo);
+        }
+
+        if (section != null) {
+            builder.append(" in ").append(section);
+        }
+
+        if (seatNumber != null) {
+            builder.append(" at seat ").append(seatNumber);
+        }
+
+        builder.append(".");
+        return builder.toString();
+    }
+
+    private boolean requiresSeatNumber(String categoryName) {
+        return SEAT_REQUIRED_CATEGORIES.contains(normalize(categoryName).toLowerCase(Locale.ROOT));
+    }
+
     private EditableAssetDto toEditableAssetDto(Asset asset) {
         return EditableAssetDto.builder()
                 .assetId(asset.getId())
@@ -488,17 +662,7 @@ public class AssetServiceImpl implements AssetService {
     }
 
     private String buildAssetDisplayId(Asset asset) {
-        String prefix = switch (normalize(asset.getCategory().getName()).toLowerCase(Locale.ROOT)) {
-            case "laptop" -> "LT";
-            case "desktop" -> "DT";
-            case "printer" -> "PR";
-            case "ups" -> "UP";
-            case "photocopier" -> "PC";
-            case "plotter" -> "PL";
-            default -> "AS";
-        };
-
-        return "%s%03d".formatted(prefix, asset.getId());
+        return AssetDisplayIdUtil.build(asset);
     }
 
     private String normalizeStatus(String value) {

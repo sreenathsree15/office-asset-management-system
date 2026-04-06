@@ -43,6 +43,9 @@ public class AssetStatusHistory {
     @Column(name = "change_source", nullable = false, length = 50)
     private String changeSource;
 
+    @Column(name = "details", length = 500)
+    private String details;
+
     @Column(name = "changed_at", nullable = false)
     private LocalDateTime changedAt;
 

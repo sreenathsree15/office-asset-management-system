@@ -6,6 +6,7 @@ import com.office.assetmanagement.dto.AdminNameUpdateResponse;
 import com.office.assetmanagement.dto.AdminPasswordUpdateRequest;
 import com.office.assetmanagement.dto.BasicMessageResponse;
 import com.office.assetmanagement.dto.SeatNumberRequestDto;
+import com.office.assetmanagement.dto.SeatNumberResponseDto;
 import com.office.assetmanagement.dto.SectionRequestDto;
 import com.office.assetmanagement.dto.SectionResponseDto;
 import com.office.assetmanagement.model.Section;
@@ -43,6 +44,14 @@ public class AdminModuleServiceImpl implements AdminModuleService {
     }
 
     @Override
+    public List<SeatNumberResponseDto> listSeatNumbers() {
+        return seatNumberRepository.findAllByOrderBySectionSectionNameAscSeatNumberAsc()
+                .stream()
+                .map(this::toSeatNumberResponse)
+                .toList();
+    }
+
+    @Override
     @Transactional
     public SectionResponseDto createSection(SectionRequestDto sectionRequestDto) {
         String sectionName = normalize(sectionRequestDto.getSectionName());
@@ -62,13 +71,52 @@ public class AdminModuleServiceImpl implements AdminModuleService {
 
     @Override
     @Transactional
+    public SectionResponseDto updateSection(Long sectionId, SectionRequestDto sectionRequestDto) {
+        Section section = sectionRepository.findById(sectionId)
+                .orElseThrow(() -> new IllegalArgumentException("Selected section does not exist."));
+        String sectionName = normalize(sectionRequestDto.getSectionName());
+
+        sectionRepository.findBySectionNameIgnoreCase(sectionName)
+                .filter(existingSection -> !existingSection.getId().equals(section.getId()))
+                .ifPresent(existingSection -> {
+                    throw new IllegalArgumentException("Section name already exists.");
+                });
+
+        section.setSectionName(sectionName);
+        section.setSectionCode(normalizeOptional(sectionRequestDto.getSectionCode()));
+        section.setDescription(normalizeOptional(sectionRequestDto.getDescription()));
+
+        return toSectionResponse(sectionRepository.save(section));
+    }
+
+    @Override
+    @Transactional
+    public BasicMessageResponse deleteSection(Long sectionId) {
+        Section section = sectionRepository.findById(sectionId)
+                .orElseThrow(() -> new IllegalArgumentException("Selected section does not exist."));
+
+        if (seatNumberRepository.existsBySectionId(section.getId())) {
+            throw new IllegalArgumentException(
+                    "Delete or move the seat numbers under this section before deleting it."
+            );
+        }
+
+        sectionRepository.delete(section);
+
+        return BasicMessageResponse.builder()
+                .message("Section deleted successfully.")
+                .build();
+    }
+
+    @Override
+    @Transactional
     public BasicMessageResponse createSeatNumber(SeatNumberRequestDto seatNumberRequestDto) {
         Section section = sectionRepository.findById(seatNumberRequestDto.getSectionId())
                 .orElseThrow(() -> new IllegalArgumentException("Selected section does not exist."));
         String seatNumber = normalize(seatNumberRequestDto.getSeatNumber());
 
-        if (seatNumberRepository.existsBySectionIdAndSeatNumberIgnoreCase(section.getId(), seatNumber)) {
-            throw new IllegalArgumentException("Seat number already exists in the selected section.");
+        if (seatNumberRepository.existsBySeatNumberIgnoreCase(seatNumber)) {
+            throw new IllegalArgumentException("Seat number already exists. Use a unique seat number.");
         }
 
         seatNumberRepository.save(SeatNumber.builder()
@@ -79,6 +127,39 @@ public class AdminModuleServiceImpl implements AdminModuleService {
 
         return BasicMessageResponse.builder()
                 .message("Seat number saved successfully.")
+                .build();
+    }
+
+    @Override
+    @Transactional
+    public SeatNumberResponseDto updateSeatNumber(Long seatNumberId, SeatNumberRequestDto seatNumberRequestDto) {
+        SeatNumber seatNumber = seatNumberRepository.findById(seatNumberId)
+                .orElseThrow(() -> new IllegalArgumentException("Selected seat number does not exist."));
+        Section section = sectionRepository.findById(seatNumberRequestDto.getSectionId())
+                .orElseThrow(() -> new IllegalArgumentException("Selected section does not exist."));
+        String nextSeatNumber = normalize(seatNumberRequestDto.getSeatNumber());
+
+        if (seatNumberRepository.existsBySeatNumberIgnoreCaseAndIdNot(nextSeatNumber, seatNumber.getId())) {
+            throw new IllegalArgumentException("Seat number already exists. Use a unique seat number.");
+        }
+
+        seatNumber.setSeatNumber(nextSeatNumber);
+        seatNumber.setSection(section);
+        seatNumber.setDescription(normalizeOptional(seatNumberRequestDto.getDescription()));
+
+        return toSeatNumberResponse(seatNumberRepository.save(seatNumber));
+    }
+
+    @Override
+    @Transactional
+    public BasicMessageResponse deleteSeatNumber(Long seatNumberId) {
+        SeatNumber seatNumber = seatNumberRepository.findById(seatNumberId)
+                .orElseThrow(() -> new IllegalArgumentException("Selected seat number does not exist."));
+
+        seatNumberRepository.delete(seatNumber);
+
+        return BasicMessageResponse.builder()
+                .message("Seat number deleted successfully.")
                 .build();
     }
 
@@ -151,6 +232,16 @@ public class AdminModuleServiceImpl implements AdminModuleService {
                 .sectionName(section.getSectionName())
                 .sectionCode(section.getSectionCode())
                 .description(section.getDescription())
+                .build();
+    }
+
+    private SeatNumberResponseDto toSeatNumberResponse(SeatNumber seatNumber) {
+        return SeatNumberResponseDto.builder()
+                .id(seatNumber.getId())
+                .seatNumber(seatNumber.getSeatNumber())
+                .sectionId(seatNumber.getSection().getId())
+                .sectionName(seatNumber.getSection().getSectionName())
+                .description(seatNumber.getDescription())
                 .build();
     }
 

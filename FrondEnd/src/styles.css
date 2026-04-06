@@ -538,6 +538,11 @@ input::placeholder {
   line-height: 1;
 }
 
+.asset-summary-grid-admin .asset-summary-card strong {
+  font-size: 1.25rem;
+  line-height: 1.25;
+}
+
 .asset-actions-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -725,6 +730,378 @@ input::placeholder {
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.asset-placeholder-card {
+  display: grid;
+  gap: 0.75rem;
+  max-width: 760px;
+  padding: 1.35rem 1.4rem;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(180deg, rgba(28, 40, 62, 0.74) 0%, rgba(23, 33, 52, 0.7) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 16px 32px rgba(8, 11, 24, 0.18);
+  backdrop-filter: blur(14px);
+}
+
+.asset-placeholder-card h2,
+.asset-placeholder-card p {
+  margin: 0;
+}
+
+.asset-placeholder-card p:last-child {
+  color: #afbdd9;
+  line-height: 1.6;
+}
+
+.admin-profile-tabs {
+  display: flex;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.admin-profile-tab {
+  padding: 0.72rem 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #d9e1fb;
+  font-weight: 700;
+}
+
+.admin-profile-tab-active {
+  background: linear-gradient(135deg, rgba(107, 29, 244, 0.9) 0%, rgba(157, 59, 255, 0.9) 100%);
+  box-shadow: 0 14px 30px rgba(107, 29, 244, 0.2);
+}
+
+.admin-section-panel {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1.2rem 1.25rem;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(180deg, rgba(28, 40, 62, 0.74) 0%, rgba(23, 33, 52, 0.72) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 16px 32px rgba(8, 11, 24, 0.18);
+  backdrop-filter: blur(14px);
+}
+
+.admin-section-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.admin-section-panel-header h2,
+.admin-section-panel-header p {
+  margin: 0;
+}
+
+.admin-section-panel-header h2 {
+  font-size: 1.1rem;
+  line-height: 1.3;
+  font-weight: 700;
+}
+
+.admin-section-count {
+  min-width: 44px;
+  min-height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #6b1df4 0%, #9d3bff 100%);
+  font-weight: 800;
+  box-shadow: 0 14px 30px rgba(107, 29, 244, 0.22);
+}
+
+.admin-section-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.85rem;
+}
+
+.admin-section-card {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.95rem 1rem;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.admin-section-card strong,
+.admin-section-card span,
+.admin-section-card p {
+  margin: 0;
+}
+
+.admin-section-card span {
+  color: #d5ddf7;
+  font-size: 0.93rem;
+}
+
+.admin-section-card p {
+  color: #9daccc;
+  line-height: 1.55;
+}
+
+.admin-card-actions {
+  display: flex;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+  margin-top: 0.35rem;
+}
+
+.admin-inline-button {
+  padding: 0.62rem 0.9rem;
+  border-radius: 12px;
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.admin-inline-button-danger {
+  background: rgba(127, 36, 50, 0.34);
+  color: #ffd4db;
+  border-color: rgba(255, 150, 163, 0.16);
+}
+
+.report-actions-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.report-back-button {
+  width: fit-content;
+  padding-inline: 1.2rem;
+}
+
+.report-toolbar-card,
+.report-table-card,
+.report-chart-card {
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(180deg, rgba(28, 40, 62, 0.78) 0%, rgba(23, 33, 52, 0.74) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 18px 36px rgba(8, 11, 24, 0.18);
+  backdrop-filter: blur(16px);
+}
+
+.report-toolbar-card,
+.report-table-card {
+  padding: 1.4rem;
+}
+
+.report-filter-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 1.5fr) repeat(2, minmax(160px, 0.9fr)) auto auto auto;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.report-filter-grid-history {
+  grid-template-columns: minmax(260px, 1.6fr) minmax(180px, 0.9fr) auto;
+}
+
+.report-search-field {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.9rem 1rem;
+  border-radius: 16px;
+  border: 1px solid #425372;
+  background: #354663;
+}
+
+.report-search-field input {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: #fff;
+  outline: none;
+}
+
+.report-search-icon {
+  color: #aab8d8;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.report-select {
+  width: 100%;
+  padding: 0.9rem 1rem;
+  border: 1px solid #425372;
+  border-radius: 16px;
+  background: #354663;
+  color: #fff;
+  outline: none;
+}
+
+.report-filter-button,
+.report-export-button,
+.report-page-button {
+  min-height: 52px;
+}
+
+.report-export-excel {
+  background: linear-gradient(135deg, #00a74f 0%, #22c55e 100%);
+  box-shadow: 0 14px 28px rgba(34, 197, 94, 0.2);
+}
+
+.report-export-pdf {
+  background: linear-gradient(135deg, #ef2222 0%, #ff4646 100%);
+  box-shadow: 0 14px 28px rgba(239, 34, 34, 0.2);
+}
+
+.report-table-scroll {
+  overflow-x: auto;
+}
+
+.report-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 760px;
+}
+
+.report-table th,
+.report-table td {
+  padding: 1.2rem 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  text-align: left;
+}
+
+.report-table thead th {
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 700;
+  background: rgba(13, 21, 38, 0.5);
+}
+
+.report-table tbody td {
+  color: #d8e2fb;
+}
+
+.report-sort-button {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+}
+
+.report-empty-cell {
+  color: #afbdd9;
+}
+
+.report-status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 106px;
+  padding: 0.5rem 0.85rem;
+  border-radius: 999px;
+  font-weight: 700;
+}
+
+.report-status-assigned {
+  background: rgba(137, 62, 255, 0.34);
+  color: #d7baff;
+}
+
+.report-status-available {
+  background: rgba(15, 126, 86, 0.32);
+  color: #4af49a;
+}
+
+.report-status-damaged {
+  background: rgba(255, 159, 28, 0.28);
+  color: #ffd28a;
+}
+
+.report-status-expired {
+  background: rgba(239, 68, 68, 0.28);
+  color: #ffb5b5;
+}
+
+.report-pagination-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-top: 1rem;
+  color: #9daccc;
+}
+
+.report-pagination-actions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.report-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.85rem;
+}
+
+.report-summary-layout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.report-chart-card {
+  display: grid;
+  gap: 1rem;
+  padding: 1.35rem;
+}
+
+.report-chart-card-wide {
+  grid-column: 1 / -1;
+}
+
+.report-chart-card h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.report-bar-row {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.report-bar-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  color: #dfe7fd;
+}
+
+.report-bar-track {
+  width: 100%;
+  height: 12px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.report-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(135deg, #9d3bff 0%, #c26dff 100%);
+}
+
+.report-bar-fill-secondary {
+  background: linear-gradient(135deg, #00a6c7 0%, #4fd9ff 100%);
+}
+
+.report-bar-fill-tertiary {
+  background: linear-gradient(135deg, #00a74f 0%, #36d278 100%);
+}
+
 .dashboard-shell {
   min-height: 100vh;
   display: grid;
@@ -885,6 +1262,27 @@ input::placeholder {
   .asset-actions-grid,
   .asset-form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .admin-profile-tabs {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .admin-section-panel-header {
+    flex-direction: column;
+  }
+
+  .report-filter-grid,
+  .report-filter-grid-history,
+  .report-summary-layout,
+  .report-actions-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .report-pagination-row {
+    flex-direction: column;
+    align-items: flex-start;
   }
 
   .dashboard-toolbar {

@@ -28,6 +28,9 @@ public class AssetAssignDto {
     @NotBlank(message = "Section is required.")
     private String section;
 
+    @Size(max = 80, message = "Seat number must be 80 characters or fewer.")
+    private String seatNumber;
+
     @NotNull(message = "Date of issue is required.")
     private LocalDate dateOfIssue;
 

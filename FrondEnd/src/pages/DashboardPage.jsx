@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../context/AuthContext";
+import ReportsPanel from "./ReportsPanel";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080";
 const MESSAGE_TIMEOUT_MS = 5000;
@@ -49,11 +50,32 @@ const ACTION_CARDS = [
   }
 ];
 
+const ADMIN_ACTION_CARDS = [
+  {
+    key: "add-section",
+    icon: "SC",
+    title: "Add Section",
+    description: "Create sections that can be used during asset assignment."
+  },
+  {
+    key: "add-seat",
+    icon: "SN",
+    title: "Add Seat Number",
+    description: "Save seat numbers and link them to the correct section."
+  },
+  {
+    key: "admin-profile",
+    icon: "AP",
+    title: "Admin Profile",
+    description: "Update the admin name and change the account password."
+  }
+];
+
 const SIDEBAR_ITEMS = [
-  { key: "dashboard", label: "Dashboard", type: "static" },
-  { key: "asset-management", label: "Asset Management", type: "active" },
-  { key: "admin-control", label: "Admin Control", type: "static" },
-  { key: "reports", label: "Reports", type: "static" },
+  { key: "dashboard", label: "Dashboard", type: "panel" },
+  { key: "asset-management", label: "Asset Management", type: "panel" },
+  { key: "admin-control", label: "Admin Control", type: "panel" },
+  { key: "reports", label: "Reports", type: "panel" },
   { key: "logout", label: "Logout", type: "logout" }
 ];
 
@@ -95,6 +117,7 @@ const createEmptyAssignAssetForm = () => ({
   category: "",
   assignedTo: "",
   section: "",
+  seatNumber: "",
   dateOfIssue: getTodayDateString(),
   status: "Assigned",
   remarks: ""
@@ -105,6 +128,7 @@ const createEmptyReturnAssetForm = () => ({
   category: "",
   assignedTo: "",
   section: "",
+  seatNumber: "",
   dateOfIssue: "",
   returnDate: getTodayDateString(),
   conditionAtReturn: "Good",
@@ -145,6 +169,32 @@ const createEmptyEditAssetForm = () => ({
   originalStatus: ""
 });
 
+const createEmptySectionForm = () => ({
+  id: "",
+  sectionName: "",
+  sectionCode: "",
+  description: ""
+});
+
+const createEmptySeatNumberForm = () => ({
+  id: "",
+  seatNumber: "",
+  sectionId: "",
+  description: ""
+});
+
+const createAdminNameForm = (username = "") => ({
+  newName: username
+});
+
+const createEmptyAdminPasswordForm = () => ({
+  currentPassword: "",
+  newPassword: "",
+  confirmNewPassword: ""
+});
+
+const SEAT_REQUIRED_CATEGORIES = new Set(["desktop", "printer", "ups"]);
+
 function shouldConfirmUnusualStatusChange(originalStatus, nextStatus) {
   const previous = (originalStatus ?? "").trim().toLowerCase();
   const next = (nextStatus ?? "").trim().toLowerCase();
@@ -157,6 +207,10 @@ function shouldConfirmUnusualStatusChange(originalStatus, nextStatus) {
       (previous === "assigned" && next === "expired")
     )
   );
+}
+
+function normalizeText(value) {
+  return (value ?? "").trim().toLowerCase();
 }
 
 async function parseResponse(response) {
@@ -178,8 +232,10 @@ async function parseResponse(response) {
 }
 
 export default function DashboardPage() {
-  const { user, logout } = useAuth();
+  const { user, logout, updateSession } = useAuth();
+  const [activePanel, setActivePanel] = useState("asset-management");
   const [categories, setCategories] = useState([]);
+  const [sections, setSections] = useState([]);
   const [assetSummary, setAssetSummary] = useState({
     totalAssets: 0,
     availableAssets: 0,
@@ -190,6 +246,8 @@ export default function DashboardPage() {
   const [isLoadingEditableAssets, setIsLoadingEditableAssets] = useState(false);
   const [isLoadingActiveAssets, setIsLoadingActiveAssets] = useState(false);
   const [isLoadingCategories, setIsLoadingCategories] = useState(true);
+  const [isLoadingSections, setIsLoadingSections] = useState(true);
+  const [isLoadingSeatNumbers, setIsLoadingSeatNumbers] = useState(true);
   const [isLoadingAvailableAssets, setIsLoadingAvailableAssets] = useState(false);
   const [isLoadingAssignedAssets, setIsLoadingAssignedAssets] = useState(false);
   const [isSavingAsset, setIsSavingAsset] = useState(false);
@@ -199,6 +257,10 @@ export default function DashboardPage() {
   const [isSavingDamagedAsset, setIsSavingDamagedAsset] = useState(false);
   const [isSavingExpiredAsset, setIsSavingExpiredAsset] = useState(false);
   const [isSavingReturnAsset, setIsSavingReturnAsset] = useState(false);
+  const [isSavingSection, setIsSavingSection] = useState(false);
+  const [isSavingSeatNumber, setIsSavingSeatNumber] = useState(false);
+  const [isSavingAdminName, setIsSavingAdminName] = useState(false);
+  const [isSavingAdminPassword, setIsSavingAdminPassword] = useState(false);
   const [activeModal, setActiveModal] = useState(null);
   const [assetForm, setAssetForm] = useState(createEmptyAssetForm);
   const [bulkAssetForm, setBulkAssetForm] = useState(createEmptyBulkAssetForm);
@@ -207,10 +269,16 @@ export default function DashboardPage() {
   const [returnAssetForm, setReturnAssetForm] = useState(createEmptyReturnAssetForm);
   const [damagedAssetForm, setDamagedAssetForm] = useState(createEmptyDamagedAssetForm);
   const [expiredAssetForm, setExpiredAssetForm] = useState(createEmptyExpiredAssetForm);
+  const [sectionForm, setSectionForm] = useState(createEmptySectionForm);
+  const [seatNumberForm, setSeatNumberForm] = useState(createEmptySeatNumberForm);
+  const [adminNameForm, setAdminNameForm] = useState(() => createAdminNameForm(user?.username ?? ""));
+  const [adminPasswordForm, setAdminPasswordForm] = useState(createEmptyAdminPasswordForm);
+  const [adminProfileTab, setAdminProfileTab] = useState("name");
   const [editableAssets, setEditableAssets] = useState([]);
   const [activeAssets, setActiveAssets] = useState([]);
   const [availableAssets, setAvailableAssets] = useState([]);
   const [assignedAssets, setAssignedAssets] = useState([]);
+  const [seatNumbers, setSeatNumbers] = useState([]);
   const [serialAvailability, setSerialAvailability] = useState({
     isChecking: false,
     available: true,
@@ -227,7 +295,10 @@ export default function DashboardPage() {
     activeModal?.key === "assign-asset" ||
     activeModal?.key === "mark-damaged" ||
     activeModal?.key === "mark-expired" ||
-    activeModal?.key === "return-asset";
+    activeModal?.key === "return-asset" ||
+    activeModal?.key === "add-section" ||
+    activeModal?.key === "add-seat" ||
+    activeModal?.key === "admin-profile";
   const isSerialNumberChanged =
     editAssetForm.assetId &&
     editAssetForm.serialNumber.trim() !== editAssetForm.originalSerialNumber.trim();
@@ -235,6 +306,26 @@ export default function DashboardPage() {
     editAssetForm.originalStatus,
     editAssetForm.status
   );
+  const isAssetPanel = activePanel === "asset-management";
+  const isAdminPanel = activePanel === "admin-control";
+  const isReportsPanel = activePanel === "reports";
+  const currentSidebarLabel =
+    SIDEBAR_ITEMS.find((item) => item.key === activePanel)?.label ?? "Asset Management";
+  const sectionNameConflict = sections.find((section) => (
+    normalizeText(section.sectionName) === normalizeText(sectionForm.sectionName) &&
+    String(section.id) !== String(sectionForm.id)
+  ));
+  const selectedAssignSection = sections.find(
+    (section) => normalizeText(section.sectionName) === normalizeText(assignAssetForm.section)
+  );
+  const assignAssetRequiresSeatNumber = SEAT_REQUIRED_CATEGORIES.has(normalizeText(assignAssetForm.category));
+  const assignSeatNumbersForSection = selectedAssignSection
+    ? seatNumbers.filter((seat) => seat.sectionId === selectedAssignSection.id)
+    : [];
+  const seatNumberConflict = seatNumbers.find((seat) => (
+    normalizeText(seat.seatNumber) === normalizeText(seatNumberForm.seatNumber) &&
+    String(seat.id) !== String(seatNumberForm.id)
+  ));
 
   const authHeaders = {
     Authorization: `${user?.tokenType ?? "Bearer"} ${user?.token ?? ""}`
@@ -294,6 +385,43 @@ export default function DashboardPage() {
 
     const payload = await parseResponse(response);
     return Array.isArray(payload) ? payload : [];
+  };
+
+  const fetchSections = async () => {
+    const response = await fetch(`${API_BASE_URL}/api/admin/sections`, {
+      method: "GET",
+      headers: authHeaders
+    });
+
+    const payload = await parseResponse(response);
+    return Array.isArray(payload) ? payload : [];
+  };
+
+  const refreshSectionsData = async () => {
+    const payload = await fetchSections();
+    setSections(payload);
+    return payload;
+  };
+
+  const fetchSeatNumbers = async () => {
+    const response = await fetch(`${API_BASE_URL}/api/admin/seats`, {
+      method: "GET",
+      headers: authHeaders
+    });
+
+    const payload = await parseResponse(response);
+    return Array.isArray(payload) ? payload : [];
+  };
+
+  const refreshSeatNumbersData = async () => {
+    const payload = await fetchSeatNumbers();
+    setSeatNumbers(payload);
+    return payload;
+  };
+
+  const getSectionOptionLabel = (section) => {
+    const code = (section?.sectionCode ?? "").trim();
+    return code ? `${section.sectionName} (${code})` : section.sectionName;
   };
 
   useEffect(() => {
@@ -404,22 +532,27 @@ export default function DashboardPage() {
 
     const loadPageData = async () => {
       setIsLoadingCategories(true);
+      setIsLoadingSections(true);
+      setIsLoadingSeatNumbers(true);
 
       try {
-        const categoryResponse = await fetch(`${API_BASE_URL}/api/categories`, {
-          method: "GET",
-          headers: authHeaders
-        });
-
-        const categoryPayload = await parseResponse(categoryResponse);
-        const summaryResponse = await fetch(`${API_BASE_URL}/api/assets/summary`, {
-          method: "GET",
-          headers: authHeaders
-        });
-        const summaryPayload = await parseResponse(summaryResponse);
+        const [categoryPayload, summaryPayload, sectionPayload, seatNumberPayload] = await Promise.all([
+          fetch(`${API_BASE_URL}/api/categories`, {
+            method: "GET",
+            headers: authHeaders
+          }).then(parseResponse),
+          fetch(`${API_BASE_URL}/api/assets/summary`, {
+            method: "GET",
+            headers: authHeaders
+          }).then(parseResponse),
+          fetchSections(),
+          fetchSeatNumbers()
+        ]);
 
         if (isMounted) {
           setCategories(Array.isArray(categoryPayload) ? categoryPayload : []);
+          setSections(Array.isArray(sectionPayload) ? sectionPayload : []);
+          setSeatNumbers(Array.isArray(seatNumberPayload) ? seatNumberPayload : []);
           setAssetSummary({
             totalAssets: summaryPayload?.totalAssets ?? 0,
             availableAssets: summaryPayload?.availableAssets ?? 0,
@@ -435,6 +568,8 @@ export default function DashboardPage() {
       } finally {
         if (isMounted) {
           setIsLoadingCategories(false);
+          setIsLoadingSections(false);
+          setIsLoadingSeatNumbers(false);
         }
       }
     };
@@ -538,6 +673,20 @@ export default function DashboardPage() {
         setIsLoadingAssignedAssets(false);
       }
     }
+
+    if (card.key === "add-section") {
+      setSectionForm(createEmptySectionForm());
+    }
+
+    if (card.key === "add-seat") {
+      setSeatNumberForm(createEmptySeatNumberForm());
+    }
+
+    if (card.key === "admin-profile") {
+      setAdminProfileTab("name");
+      setAdminNameForm(createAdminNameForm(user?.username ?? ""));
+      setAdminPasswordForm(createEmptyAdminPasswordForm());
+    }
   };
 
   const closeModal = () => {
@@ -550,12 +699,68 @@ export default function DashboardPage() {
     setIsSavingDamagedAsset(false);
     setIsSavingExpiredAsset(false);
     setIsSavingReturnAsset(false);
+    setIsSavingSection(false);
+    setIsSavingSeatNumber(false);
+    setIsSavingAdminName(false);
+    setIsSavingAdminPassword(false);
     setEditAssetForm(createEmptyEditAssetForm());
+    setSectionForm(createEmptySectionForm());
+    setSeatNumberForm(createEmptySeatNumberForm());
+    setAdminNameForm(createAdminNameForm(user?.username ?? ""));
+    setAdminPasswordForm(createEmptyAdminPasswordForm());
+    setAdminProfileTab("name");
     setEditStatusConfirmed(false);
     setSerialAvailability({
       isChecking: false,
       available: true,
       message: ""
+    });
+  };
+
+  const handleSidebarItemClick = (item) => {
+    if (item.type === "logout") {
+      logout();
+      return;
+    }
+
+    setActivePanel(item.key);
+    closeModal();
+
+    if (item.key === "admin-control") {
+      Promise.all([refreshSectionsData(), refreshSeatNumbersData()]).catch((error) => {
+        setPageError(error.message);
+      });
+    }
+  };
+
+  const openSectionEditor = (section) => {
+    setModalError("");
+    setSectionForm({
+      id: String(section.id),
+      sectionName: section.sectionName ?? "",
+      sectionCode: section.sectionCode ?? "",
+      description: section.description ?? ""
+    });
+    setActiveModal({ key: "add-section", title: "Edit Section" });
+  };
+
+  const openSeatNumberEditor = (seat) => {
+    setModalError("");
+    setSeatNumberForm({
+      id: String(seat.id),
+      seatNumber: seat.seatNumber ?? "",
+      sectionId: String(seat.sectionId ?? ""),
+      description: seat.description ?? ""
+    });
+    setActiveModal({ key: "add-seat", title: "Edit Seat Number" });
+  };
+
+  const openDeleteDialog = (type, item) => {
+    setModalError("");
+    setActiveModal({
+      key: type === "section" ? "delete-section" : "delete-seat",
+      title: type === "section" ? "Delete Section" : "Delete Seat Number",
+      item
     });
   };
 
@@ -619,7 +824,18 @@ export default function DashboardPage() {
       setAssignAssetForm((current) => ({
         ...current,
         assetId: value,
-        category: selectedAsset?.categoryName ?? ""
+        category: selectedAsset?.categoryName ?? "",
+        seatNumber: ""
+      }));
+
+      return;
+    }
+
+    if (name === "section") {
+      setAssignAssetForm((current) => ({
+        ...current,
+        section: value,
+        seatNumber: ""
       }));
 
       return;
@@ -640,6 +856,7 @@ export default function DashboardPage() {
         category: selectedAsset?.categoryName ?? "",
         assignedTo: selectedAsset?.assignedTo ?? "",
         section: selectedAsset?.section ?? "",
+        seatNumber: selectedAsset?.seatNumber ?? "",
         dateOfIssue: selectedAsset?.dateOfIssue ?? ""
       }));
 
@@ -683,6 +900,30 @@ export default function DashboardPage() {
     }
 
     setDamagedAssetForm((current) => ({ ...current, [name]: value }));
+  };
+
+  const handleSectionFormChange = (event) => {
+    const { name, value } = event.target;
+    setModalError("");
+    setSectionForm((current) => ({ ...current, [name]: value }));
+  };
+
+  const handleSeatNumberFormChange = (event) => {
+    const { name, value } = event.target;
+    setModalError("");
+    setSeatNumberForm((current) => ({ ...current, [name]: value }));
+  };
+
+  const handleAdminNameFormChange = (event) => {
+    const { name, value } = event.target;
+    setModalError("");
+    setAdminNameForm((current) => ({ ...current, [name]: value }));
+  };
+
+  const handleAdminPasswordFormChange = (event) => {
+    const { name, value } = event.target;
+    setModalError("");
+    setAdminPasswordForm((current) => ({ ...current, [name]: value }));
   };
 
   const handleSaveAsset = async (event) => {
@@ -781,6 +1022,7 @@ export default function DashboardPage() {
           assetId: Number(assignAssetForm.assetId),
           assignedTo: assignAssetForm.assignedTo,
           section: assignAssetForm.section,
+          seatNumber: assignAssetForm.seatNumber,
           dateOfIssue: assignAssetForm.dateOfIssue,
           remarks: assignAssetForm.remarks
         })
@@ -956,6 +1198,429 @@ export default function DashboardPage() {
     }
   };
 
+  const handleSaveSection = async (event) => {
+    event.preventDefault();
+    setPageError("");
+    setPageNotice("");
+    setModalError("");
+
+    if (sectionNameConflict) {
+      setModalError(`Section name "${sectionForm.sectionName}" already exists.`);
+      return;
+    }
+
+    setIsSavingSection(true);
+
+    try {
+      const response = await fetch(
+        sectionForm.id
+          ? `${API_BASE_URL}/api/admin/sections/${sectionForm.id}`
+          : `${API_BASE_URL}/api/admin/sections`,
+        {
+        method: sectionForm.id ? "PUT" : "POST",
+        headers: {
+          ...authHeaders,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          sectionName: sectionForm.sectionName,
+          sectionCode: sectionForm.sectionCode,
+          description: sectionForm.description
+        })
+      });
+
+      const payload = await parseResponse(response);
+      await Promise.all([refreshSectionsData(), refreshSeatNumbersData()]);
+      closeModal();
+      setPageNotice(
+        sectionForm.id
+          ? `Section "${payload.sectionName}" updated successfully.`
+          : `Section "${payload.sectionName}" saved successfully.`
+      );
+    } catch (error) {
+      setModalError(error.message);
+    } finally {
+      setIsSavingSection(false);
+    }
+  };
+
+  const handleSaveSeatNumber = async (event) => {
+    event.preventDefault();
+    setPageError("");
+    setPageNotice("");
+    setModalError("");
+
+    if (seatNumberConflict) {
+      setModalError(
+        `Seat number "${seatNumberForm.seatNumber}" already exists under ${seatNumberConflict.sectionName}.`
+      );
+      return;
+    }
+
+    setIsSavingSeatNumber(true);
+
+    try {
+      const response = await fetch(
+        seatNumberForm.id
+          ? `${API_BASE_URL}/api/admin/seats/${seatNumberForm.id}`
+          : `${API_BASE_URL}/api/admin/seats`,
+        {
+        method: seatNumberForm.id ? "PUT" : "POST",
+        headers: {
+          ...authHeaders,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          seatNumber: seatNumberForm.seatNumber,
+          sectionId: Number(seatNumberForm.sectionId),
+          description: seatNumberForm.description
+        })
+      });
+
+      const payload = await parseResponse(response);
+      await refreshSeatNumbersData();
+      closeModal();
+      setPageNotice(
+        seatNumberForm.id
+          ? `Seat number "${payload.seatNumber}" updated successfully.`
+          : payload.message ?? "Seat number saved successfully."
+      );
+    } catch (error) {
+      setModalError(error.message);
+    } finally {
+      setIsSavingSeatNumber(false);
+    }
+  };
+
+  const handleDeleteSection = async () => {
+    const section = activeModal?.item;
+
+    if (!section?.id) {
+      return;
+    }
+
+    setPageError("");
+    setPageNotice("");
+    setModalError("");
+    setIsSavingSection(true);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/admin/sections/${section.id}`, {
+        method: "DELETE",
+        headers: authHeaders
+      });
+
+      const payload = await parseResponse(response);
+      await Promise.all([refreshSectionsData(), refreshSeatNumbersData()]);
+      closeModal();
+      setPageNotice(payload.message ?? "Section deleted successfully.");
+    } catch (error) {
+      setModalError(error.message);
+    } finally {
+      setIsSavingSection(false);
+    }
+  };
+
+  const handleDeleteSeatNumber = async () => {
+    const seat = activeModal?.item;
+
+    if (!seat?.id) {
+      return;
+    }
+
+    setPageError("");
+    setPageNotice("");
+    setModalError("");
+    setIsSavingSeatNumber(true);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/admin/seats/${seat.id}`, {
+        method: "DELETE",
+        headers: authHeaders
+      });
+
+      const payload = await parseResponse(response);
+      await refreshSeatNumbersData();
+      closeModal();
+      setPageNotice(payload.message ?? "Seat number deleted successfully.");
+    } catch (error) {
+      setModalError(error.message);
+    } finally {
+      setIsSavingSeatNumber(false);
+    }
+  };
+
+  const handleSaveAdminName = async (event) => {
+    event.preventDefault();
+    setPageError("");
+    setPageNotice("");
+    setModalError("");
+    setIsSavingAdminName(true);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/admin/profile/name`, {
+        method: "POST",
+        headers: {
+          ...authHeaders,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          newName: adminNameForm.newName
+        })
+      });
+
+      const payload = await parseResponse(response);
+      updateSession({
+        username: payload.username,
+        role: payload.role,
+        token: payload.token,
+        tokenType: payload.tokenType
+      });
+      closeModal();
+      setPageNotice(payload.message ?? "Admin name updated successfully.");
+    } catch (error) {
+      setModalError(error.message);
+    } finally {
+      setIsSavingAdminName(false);
+    }
+  };
+
+  const handleSaveAdminPassword = async (event) => {
+    event.preventDefault();
+    setPageError("");
+    setPageNotice("");
+    setModalError("");
+    setIsSavingAdminPassword(true);
+
+    if (adminPasswordForm.newPassword !== adminPasswordForm.confirmNewPassword) {
+      setModalError("New password and confirm new password must match.");
+      setIsSavingAdminPassword(false);
+      return;
+    }
+
+    if (adminPasswordForm.currentPassword === adminPasswordForm.newPassword) {
+      setModalError("New password must be different from the current password.");
+      setIsSavingAdminPassword(false);
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/admin/profile/password`, {
+        method: "POST",
+        headers: {
+          ...authHeaders,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          currentPassword: adminPasswordForm.currentPassword,
+          newPassword: adminPasswordForm.newPassword,
+          confirmNewPassword: adminPasswordForm.confirmNewPassword
+        })
+      });
+
+      const payload = await parseResponse(response);
+      closeModal();
+      setPageNotice(payload.message ?? "Password updated successfully.");
+    } catch (error) {
+      setModalError(error.message);
+    } finally {
+      setIsSavingAdminPassword(false);
+    }
+  };
+
+  const renderPlaceholderPanel = (title, description) => (
+    <>
+      <header className="asset-page-header">
+        <div>
+          <h1>{title}</h1>
+          <p className="dashboard-user">{description}</p>
+        </div>
+      </header>
+
+      <section className="asset-placeholder-card">
+        <p className="eyebrow">Coming Soon</p>
+        <h2>{title} is ready for the next step.</h2>
+        <p>
+          We have the Asset Management and Admin Control modules connected first. This area can be
+          designed next whenever you want to continue.
+        </p>
+      </section>
+    </>
+  );
+
+  const renderAssetPanel = () => (
+    <>
+      <header className="asset-page-header">
+        <div>
+          <h1>Asset Management</h1>
+          <p className="dashboard-user">Manage electronic assets and inventory actions.</p>
+        </div>
+      </header>
+
+      <section className="asset-summary-grid">
+        <article className="asset-summary-card">
+          <span>Total Assets</span>
+          <strong>{assetSummary.totalAssets}</strong>
+        </article>
+        <article className="asset-summary-card">
+          <span>Available</span>
+          <strong>{assetSummary.availableAssets}</strong>
+        </article>
+        <article className="asset-summary-card">
+          <span>Assigned</span>
+          <strong>{assetSummary.assignedAssets}</strong>
+        </article>
+        <article className="asset-summary-card">
+          <span>Damaged</span>
+          <strong>{assetSummary.damagedAssets}</strong>
+        </article>
+        <article className="asset-summary-card">
+          <span>Expired</span>
+          <strong>{assetSummary.expiredAssets}</strong>
+        </article>
+      </section>
+
+      <section className="asset-actions-grid">
+        {ACTION_CARDS.map((card) => (
+          <button
+            key={card.key}
+            className="asset-action-card"
+            type="button"
+            onClick={() => openModal(card)}
+          >
+            <span className="asset-action-icon">{card.icon}</span>
+            <strong>{card.title}</strong>
+            <span>{card.description}</span>
+          </button>
+        ))}
+      </section>
+    </>
+  );
+
+  const renderAdminPanel = () => (
+    <>
+      <header className="asset-page-header">
+        <div>
+          <h1>Admin Control</h1>
+          <p className="dashboard-user">
+            Manage sections, seat numbers, and profile settings for the administrator account.
+          </p>
+        </div>
+      </header>
+
+      <section className="asset-summary-grid asset-summary-grid-admin">
+        <article className="asset-summary-card">
+          <span>Current Admin</span>
+          <strong>{user?.username ?? "Admin"}</strong>
+        </article>
+        <article className="asset-summary-card">
+          <span>Sections</span>
+          <strong>{sections.length}</strong>
+        </article>
+      </section>
+
+      <section className="asset-actions-grid asset-actions-grid-admin">
+        {ADMIN_ACTION_CARDS.map((card) => (
+          <button
+            key={card.key}
+            className="asset-action-card"
+            type="button"
+            onClick={() => openModal(card)}
+          >
+            <span className="asset-action-icon">{card.icon}</span>
+            <strong>{card.title}</strong>
+            <span>{card.description}</span>
+          </button>
+        ))}
+      </section>
+
+      <section className="admin-section-panel">
+        <div className="admin-section-panel-header">
+          <div>
+            <p className="eyebrow">Saved Sections</p>
+          </div>
+        </div>
+
+        {isLoadingSections ? (
+          <p className="asset-empty-state">Loading sections from the database...</p>
+        ) : sections.length === 0 ? (
+          <p className="asset-empty-state">
+            No sections have been saved yet. Add a section and it will appear here and in the
+            Assign Asset form.
+          </p>
+        ) : (
+          <div className="admin-section-grid">
+            {sections.map((section) => (
+              <article key={section.id} className="admin-section-card">
+                <strong>{section.sectionName}</strong>
+                <span>{section.sectionCode ? `Code: ${section.sectionCode}` : "No section code"}</span>
+                <p>{section.description || "No description added yet."}</p>
+                <div className="admin-card-actions">
+                  <button
+                    className="secondary-button admin-inline-button"
+                    type="button"
+                    onClick={() => openSectionEditor(section)}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    className="secondary-button admin-inline-button admin-inline-button-danger"
+                    type="button"
+                    onClick={() => openDeleteDialog("section", section)}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="admin-section-panel">
+        <div className="admin-section-panel-header">
+          <div>
+            <p className="eyebrow">Saved Seat Numbers</p>
+          </div>
+        </div>
+
+        {isLoadingSeatNumbers ? (
+          <p className="asset-empty-state">Loading seat numbers from the database...</p>
+        ) : seatNumbers.length === 0 ? (
+          <p className="asset-empty-state">
+            No seat numbers have been saved yet. Add a seat number and it will appear here.
+          </p>
+        ) : (
+          <div className="admin-section-grid">
+            {seatNumbers.map((seat) => (
+              <article key={seat.id} className="admin-section-card">
+                <strong>{seat.seatNumber}</strong>
+                <span>Section: {seat.sectionName}</span>
+                <p>{seat.description || "No description added yet."}</p>
+                <div className="admin-card-actions">
+                  <button
+                    className="secondary-button admin-inline-button"
+                    type="button"
+                    onClick={() => openSeatNumberEditor(seat)}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    className="secondary-button admin-inline-button admin-inline-button-danger"
+                    type="button"
+                    onClick={() => openDeleteDialog("seat", seat)}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+    </>
+  );
+
   return (
     <main className="asset-shell">
       {pageError || pageNotice ? (
@@ -980,12 +1645,12 @@ export default function DashboardPage() {
               <button
                 key={item.key}
                 className={
-                  item.type === "active"
+                  item.type !== "logout" && item.key === activePanel
                     ? "asset-sidebar-item asset-sidebar-item-active"
                     : "asset-sidebar-item"
                 }
                 type="button"
-                onClick={item.type === "logout" ? logout : undefined}
+                onClick={() => handleSidebarItemClick(item)}
               >
                 <span className="asset-sidebar-icon">
                   {item.key === "dashboard"
@@ -1005,50 +1670,25 @@ export default function DashboardPage() {
         </aside>
 
         <section className="asset-content">
-          <header className="asset-page-header">
-            <div>
-              <h1>Asset Management</h1>
-              <p className="dashboard-user">Manage electronic assets and inventory actions.</p>
-            </div>
-          </header>
-
-          <section className="asset-summary-grid">
-            <article className="asset-summary-card">
-              <span>Total Assets</span>
-              <strong>{assetSummary.totalAssets}</strong>
-            </article>
-            <article className="asset-summary-card">
-              <span>Available</span>
-              <strong>{assetSummary.availableAssets}</strong>
-            </article>
-            <article className="asset-summary-card">
-              <span>Assigned</span>
-              <strong>{assetSummary.assignedAssets}</strong>
-            </article>
-            <article className="asset-summary-card">
-              <span>Damaged</span>
-              <strong>{assetSummary.damagedAssets}</strong>
-            </article>
-            <article className="asset-summary-card">
-              <span>Expired</span>
-              <strong>{assetSummary.expiredAssets}</strong>
-            </article>
-          </section>
-
-          <section className="asset-actions-grid">
-            {ACTION_CARDS.map((card) => (
-              <button
-                key={card.key}
-                className="asset-action-card"
-                type="button"
-                onClick={() => openModal(card)}
-              >
-                <span className="asset-action-icon">{card.icon}</span>
-                <strong>{card.title}</strong>
-                <span>{card.description}</span>
-              </button>
-            ))}
-          </section>
+          {isAssetPanel
+            ? renderAssetPanel()
+            : isAdminPanel
+              ? renderAdminPanel()
+              : isReportsPanel
+                ? (
+                  <ReportsPanel
+                    categories={categories}
+                    setPageError={setPageError}
+                    setPageNotice={setPageNotice}
+                    user={user}
+                  />
+                )
+              : renderPlaceholderPanel(
+                  currentSidebarLabel,
+                  currentSidebarLabel === "Dashboard"
+                    ? "A high-level dashboard view can be added next."
+                    : "Reports can be designed once the reporting workflows are finalized."
+                )}
         </section>
       </div>
 
@@ -1788,14 +2428,49 @@ export default function DashboardPage() {
 
                       <label className="field">
                         <span>Section</span>
-                        <input
+                        <select
                           name="section"
                           onChange={handleAssignAssetFormChange}
-                          placeholder="Enter section"
-                          type="text"
                           value={assignAssetForm.section}
-                        />
+                        >
+                          <option value="">
+                            {isLoadingSections
+                              ? "Loading sections..."
+                              : sections.length === 0
+                                ? "No sections available"
+                                : "Select section"}
+                          </option>
+                          {sections.map((section) => (
+                            <option key={section.id} value={section.sectionName}>
+                              {getSectionOptionLabel(section)}
+                            </option>
+                          ))}
+                        </select>
                       </label>
+
+                      {assignAssetRequiresSeatNumber ? (
+                        <label className="field">
+                          <span>Seat Number</span>
+                          <select
+                            name="seatNumber"
+                            onChange={handleAssignAssetFormChange}
+                            value={assignAssetForm.seatNumber}
+                          >
+                            <option value="">
+                              {!assignAssetForm.section
+                                ? "Select section first"
+                                : assignSeatNumbersForSection.length === 0
+                                  ? "No seat numbers available"
+                                  : "Select seat number"}
+                            </option>
+                            {assignSeatNumbersForSection.map((seat) => (
+                              <option key={seat.id} value={seat.seatNumber}>
+                                {seat.seatNumber}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      ) : null}
 
                       <label className="field asset-field-full">
                         <span>Date of Issue</span>
@@ -1826,6 +2501,29 @@ export default function DashboardPage() {
                       </p>
                     ) : null}
 
+                    {!isLoadingSections && sections.length === 0 ? (
+                      <p className="asset-empty-state">
+                        No sections are available yet. Add a section in Admin Control before
+                        assigning assets.
+                      </p>
+                    ) : null}
+
+                    {assignAssetRequiresSeatNumber && !assignAssetForm.section ? (
+                      <p className="asset-empty-state">
+                        This asset category requires a seat number. Select a section first, then
+                        choose one of its seat numbers.
+                      </p>
+                    ) : null}
+
+                    {assignAssetRequiresSeatNumber &&
+                    assignAssetForm.section &&
+                    assignSeatNumbersForSection.length === 0 ? (
+                      <p className="asset-empty-state">
+                        No seat numbers are available for the selected section. Add a seat number
+                        in Admin Control before assigning this asset.
+                      </p>
+                    ) : null}
+
                     {modalError ? <p className="message error-message">{modalError}</p> : null}
                   </div>
 
@@ -1836,7 +2534,12 @@ export default function DashboardPage() {
                     <button
                       className="primary-button"
                       disabled={
-                        isSavingAssignAsset || isLoadingAvailableAssets || availableAssets.length === 0
+                        isSavingAssignAsset ||
+                        isLoadingAvailableAssets ||
+                        isLoadingSections ||
+                        availableAssets.length === 0 ||
+                        sections.length === 0 ||
+                        (assignAssetRequiresSeatNumber && !assignAssetForm.seatNumber)
                       }
                       type="submit"
                     >
@@ -2028,6 +2731,18 @@ export default function DashboardPage() {
                         />
                       </label>
 
+                      {returnAssetForm.seatNumber ? (
+                        <label className="field">
+                          <span>Seat Number</span>
+                          <input
+                            className="readonly-field"
+                            readOnly
+                            type="text"
+                            value={returnAssetForm.seatNumber}
+                          />
+                        </label>
+                      ) : null}
+
                       <label className="field">
                         <span>Date of Issue</span>
                         <input
@@ -2094,6 +2809,406 @@ export default function DashboardPage() {
                       type="submit"
                     >
                       {isSavingReturnAsset ? "Saving..." : "Save"}
+                    </button>
+                  </div>
+                </form>
+              </>
+            ) : activeModal.key === "add-section" ? (
+              <>
+                <div className="asset-modal-header">
+                  <div>
+                    <p className="auth-modal-caption">Admin Control</p>
+                    <h3>{sectionForm.id ? "Edit Section" : "Add Section"}</h3>
+                  </div>
+
+                  <button
+                    aria-label="Close add section dialog"
+                    className="modal-close-button"
+                    type="button"
+                    onClick={closeModal}
+                  >
+                    X
+                  </button>
+                </div>
+
+                <form className="asset-form" onSubmit={handleSaveSection}>
+                  <div className="asset-modal-scroll">
+                    <div className="asset-form-grid">
+                      <label className="field asset-field-full">
+                        <span>Section Name</span>
+                        <input
+                          name="sectionName"
+                          onChange={handleSectionFormChange}
+                          placeholder="Enter section name"
+                          type="text"
+                          value={sectionForm.sectionName}
+                        />
+                      </label>
+
+                      {sectionNameConflict ? (
+                        <div className="asset-field-full">
+                          <p className="asset-inline-error">
+                            Section name already exists. Use a different section name.
+                          </p>
+                        </div>
+                      ) : null}
+
+                      <label className="field asset-field-full">
+                        <span>Section Code (Optional)</span>
+                        <input
+                          name="sectionCode"
+                          onChange={handleSectionFormChange}
+                          placeholder="Enter section code"
+                          type="text"
+                          value={sectionForm.sectionCode}
+                        />
+                      </label>
+
+                      <label className="field asset-field-full">
+                        <span>Description (Optional)</span>
+                        <textarea
+                          name="description"
+                          onChange={handleSectionFormChange}
+                          placeholder="Enter description"
+                          rows="5"
+                          value={sectionForm.description}
+                        />
+                      </label>
+                    </div>
+
+                    {modalError ? <p className="message error-message">{modalError}</p> : null}
+                  </div>
+
+                  <div className="asset-modal-footer">
+                    <button className="secondary-button" type="button" onClick={closeModal}>
+                      Cancel
+                    </button>
+                    <button
+                      className="primary-button"
+                      disabled={isSavingSection || Boolean(sectionNameConflict)}
+                      type="submit"
+                    >
+                      {isSavingSection ? "Saving..." : sectionForm.id ? "Update" : "Save"}
+                    </button>
+                  </div>
+                </form>
+              </>
+            ) : activeModal.key === "add-seat" ? (
+              <>
+                <div className="asset-modal-header">
+                  <div>
+                    <p className="auth-modal-caption">Admin Control</p>
+                    <h3>{seatNumberForm.id ? "Edit Seat Number" : "Add Seat Number"}</h3>
+                  </div>
+
+                  <button
+                    aria-label="Close add seat number dialog"
+                    className="modal-close-button"
+                    type="button"
+                    onClick={closeModal}
+                  >
+                    X
+                  </button>
+                </div>
+
+                <form className="asset-form" onSubmit={handleSaveSeatNumber}>
+                  <div className="asset-modal-scroll">
+                    <div className="asset-form-grid">
+                      <label className="field asset-field-full">
+                        <span>Seat Number</span>
+                        <input
+                          name="seatNumber"
+                          onChange={handleSeatNumberFormChange}
+                          placeholder="Enter seat number"
+                          type="text"
+                          value={seatNumberForm.seatNumber}
+                        />
+                      </label>
+
+                      {seatNumberConflict ? (
+                        <div className="asset-field-full">
+                          <p className="asset-inline-error">
+                            Seat number already exists under {seatNumberConflict.sectionName}. Use
+                            a unique seat number.
+                          </p>
+                        </div>
+                      ) : null}
+
+                      <label className="field asset-field-full">
+                        <span>Section</span>
+                        <select
+                          name="sectionId"
+                          onChange={handleSeatNumberFormChange}
+                          value={seatNumberForm.sectionId}
+                        >
+                          <option value="">
+                            {isLoadingSections
+                              ? "Loading sections..."
+                              : sections.length === 0
+                                ? "No sections available"
+                                : "Select section"}
+                          </option>
+                          {sections.map((section) => (
+                            <option key={section.id} value={section.id}>
+                              {getSectionOptionLabel(section)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      <label className="field asset-field-full">
+                        <span>Description (Optional)</span>
+                        <textarea
+                          name="description"
+                          onChange={handleSeatNumberFormChange}
+                          placeholder="Enter description"
+                          rows="5"
+                          value={seatNumberForm.description}
+                        />
+                      </label>
+                    </div>
+
+                    {!isLoadingSections && sections.length === 0 ? (
+                      <p className="asset-empty-state">
+                        No sections are available yet. Add a section first, then save seat numbers
+                        under that section.
+                      </p>
+                    ) : null}
+
+                    {modalError ? <p className="message error-message">{modalError}</p> : null}
+                  </div>
+
+                  <div className="asset-modal-footer">
+                    <button className="secondary-button" type="button" onClick={closeModal}>
+                      Cancel
+                    </button>
+                    <button
+                      className="primary-button"
+                      disabled={
+                        isSavingSeatNumber ||
+                        isLoadingSections ||
+                        sections.length === 0 ||
+                        Boolean(seatNumberConflict)
+                      }
+                      type="submit"
+                    >
+                      {isSavingSeatNumber ? "Saving..." : seatNumberForm.id ? "Update" : "Save"}
+                    </button>
+                  </div>
+                </form>
+              </>
+            ) : activeModal.key === "delete-section" ? (
+              <>
+                <div className="asset-modal-header">
+                  <div>
+                    <p className="auth-modal-caption">Admin Control</p>
+                    <h3>Delete Section</h3>
+                  </div>
+
+                  <button
+                    aria-label="Close delete section dialog"
+                    className="modal-close-button"
+                    type="button"
+                    onClick={closeModal}
+                  >
+                    X
+                  </button>
+                </div>
+
+                <div className="asset-modal-scroll">
+                  <p className="asset-inline-warning">
+                    Delete section "{activeModal.item?.sectionName}"? If seat numbers still belong
+                    to this section, deletion will be blocked.
+                  </p>
+                  {modalError ? <p className="message error-message">{modalError}</p> : null}
+                </div>
+
+                <div className="asset-modal-footer">
+                  <button className="secondary-button" type="button" onClick={closeModal}>
+                    Cancel
+                  </button>
+                  <button
+                    className="primary-button"
+                    disabled={isSavingSection}
+                    type="button"
+                    onClick={handleDeleteSection}
+                  >
+                    {isSavingSection ? "Deleting..." : "Delete"}
+                  </button>
+                </div>
+              </>
+            ) : activeModal.key === "delete-seat" ? (
+              <>
+                <div className="asset-modal-header">
+                  <div>
+                    <p className="auth-modal-caption">Admin Control</p>
+                    <h3>Delete Seat Number</h3>
+                  </div>
+
+                  <button
+                    aria-label="Close delete seat number dialog"
+                    className="modal-close-button"
+                    type="button"
+                    onClick={closeModal}
+                  >
+                    X
+                  </button>
+                </div>
+
+                <div className="asset-modal-scroll">
+                  <p className="asset-inline-warning">
+                    Delete seat number "{activeModal.item?.seatNumber}" from{" "}
+                    {activeModal.item?.sectionName}?
+                  </p>
+                  {modalError ? <p className="message error-message">{modalError}</p> : null}
+                </div>
+
+                <div className="asset-modal-footer">
+                  <button className="secondary-button" type="button" onClick={closeModal}>
+                    Cancel
+                  </button>
+                  <button
+                    className="primary-button"
+                    disabled={isSavingSeatNumber}
+                    type="button"
+                    onClick={handleDeleteSeatNumber}
+                  >
+                    {isSavingSeatNumber ? "Deleting..." : "Delete"}
+                  </button>
+                </div>
+              </>
+            ) : activeModal.key === "admin-profile" ? (
+              <>
+                <div className="asset-modal-header">
+                  <div>
+                    <p className="auth-modal-caption">Admin Control</p>
+                    <h3>Admin Profile</h3>
+                  </div>
+
+                  <button
+                    aria-label="Close admin profile dialog"
+                    className="modal-close-button"
+                    type="button"
+                    onClick={closeModal}
+                  >
+                    X
+                  </button>
+                </div>
+
+                <form
+                  className="asset-form"
+                  onSubmit={adminProfileTab === "name" ? handleSaveAdminName : handleSaveAdminPassword}
+                >
+                  <div className="asset-modal-scroll">
+                    <div className="admin-profile-tabs" role="tablist" aria-label="Admin profile actions">
+                      <button
+                        className={
+                          adminProfileTab === "name"
+                            ? "admin-profile-tab admin-profile-tab-active"
+                            : "admin-profile-tab"
+                        }
+                        type="button"
+                        onClick={() => setAdminProfileTab("name")}
+                      >
+                        Change Name
+                      </button>
+                      <button
+                        className={
+                          adminProfileTab === "password"
+                            ? "admin-profile-tab admin-profile-tab-active"
+                            : "admin-profile-tab"
+                        }
+                        type="button"
+                        onClick={() => setAdminProfileTab("password")}
+                      >
+                        Change Password
+                      </button>
+                    </div>
+
+                    {adminProfileTab === "name" ? (
+                      <div className="asset-form-grid">
+                        <label className="field asset-field-full">
+                          <span>New Name</span>
+                          <input
+                            name="newName"
+                            onChange={handleAdminNameFormChange}
+                            placeholder="Enter new admin name"
+                            type="text"
+                            value={adminNameForm.newName}
+                          />
+                        </label>
+                      </div>
+                    ) : (
+                      <div className="asset-form-grid">
+                        <label className="field asset-field-full">
+                          <span>Current Password</span>
+                          <input
+                            name="currentPassword"
+                            onChange={handleAdminPasswordFormChange}
+                            placeholder="Enter current password"
+                            type="password"
+                            value={adminPasswordForm.currentPassword}
+                          />
+                        </label>
+
+                        {modalError ? (
+                          <div className="asset-field-full">
+                            <p className="asset-inline-error">{modalError}</p>
+                          </div>
+                        ) : null}
+
+                        <label className="field asset-field-full">
+                          <span>New Password</span>
+                          <input
+                            name="newPassword"
+                            onChange={handleAdminPasswordFormChange}
+                            placeholder="Enter new password"
+                            type="password"
+                            value={adminPasswordForm.newPassword}
+                          />
+                        </label>
+
+                        <label className="field asset-field-full">
+                          <span>Confirm New Password</span>
+                          <input
+                            name="confirmNewPassword"
+                            onChange={handleAdminPasswordFormChange}
+                            placeholder="Confirm new password"
+                            type="password"
+                            value={adminPasswordForm.confirmNewPassword}
+                          />
+                        </label>
+                      </div>
+                    )}
+
+                    {adminProfileTab === "name" && modalError ? (
+                      <p className="message error-message">{modalError}</p>
+                    ) : null}
+                  </div>
+
+                  <div className="asset-modal-footer">
+                    <button className="secondary-button" type="button" onClick={closeModal}>
+                      Cancel
+                    </button>
+                    <button
+                      className="primary-button"
+                      disabled={
+                        adminProfileTab === "name"
+                          ? isSavingAdminName || adminNameForm.newName.trim() === (user?.username ?? "").trim()
+                          : isSavingAdminPassword ||
+                            !adminPasswordForm.currentPassword ||
+                            !adminPasswordForm.newPassword ||
+                            !adminPasswordForm.confirmNewPassword
+                      }
+                      type="submit"
+                    >
+                      {adminProfileTab === "name"
+                        ? isSavingAdminName
+                          ? "Saving..."
+                          : "Save"
+                        : isSavingAdminPassword
+                          ? "Saving..."
+                          : "Save"}
                     </button>
                   </div>
                 </form>

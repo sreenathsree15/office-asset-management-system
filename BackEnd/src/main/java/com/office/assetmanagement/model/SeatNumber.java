@@ -19,7 +19,7 @@ import lombok.Setter;
 @Entity
 @Table(
         name = "seat_number",
-        uniqueConstraints = @UniqueConstraint(columnNames = {"section_id", "seat_number"})
+        uniqueConstraints = @UniqueConstraint(columnNames = {"seat_number"})
 )
 @Getter
 @Setter
@@ -32,7 +32,7 @@ public class SeatNumber {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "seat_number", nullable = false, length = 80)
+    @Column(name = "seat_number", nullable = false, unique = true, length = 80)
     private String seatNumber;
 
     @ManyToOne(fetch = FetchType.EAGER, optional = false)

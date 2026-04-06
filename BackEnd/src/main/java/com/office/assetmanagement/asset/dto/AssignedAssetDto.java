@@ -26,5 +26,7 @@ public class AssignedAssetDto {
 
     private String section;
 
+    private String seatNumber;
+
     private LocalDate dateOfIssue;
 }
