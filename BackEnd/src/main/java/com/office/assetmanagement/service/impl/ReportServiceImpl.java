@@ -239,6 +239,7 @@ public class ReportServiceImpl implements ReportService {
         return switch (normalize(source)) {
             case "new_asset" -> "New Asset";
             case "assign_asset" -> "Assigned";
+            case "reassign_asset" -> "Reassigned";
             case "damage_asset" -> "Marked Damaged";
             case "expire_asset" -> "Marked Expired";
             case "return_asset" -> "Returned";

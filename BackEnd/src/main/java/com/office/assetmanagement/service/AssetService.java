@@ -5,6 +5,7 @@ import com.office.assetmanagement.asset.dto.ActiveAssetDto;
 import com.office.assetmanagement.asset.dto.AssetAssignDto;
 import com.office.assetmanagement.asset.dto.AssetDamageDto;
 import com.office.assetmanagement.asset.dto.AssetExpireDto;
+import com.office.assetmanagement.asset.dto.AssetReassignDto;
 import com.office.assetmanagement.asset.dto.AssetReturnDto;
 import com.office.assetmanagement.asset.dto.AssetSummaryDto;
 import com.office.assetmanagement.asset.dto.AvailableAssetDto;
@@ -36,6 +37,8 @@ public interface AssetService {
     SerialNumberAvailabilityDto checkSerialNumberAvailability(String serialNumber, Long excludeAssetId);
 
     BasicMessageResponse assignAsset(AssetAssignDto assetAssignDto);
+
+    BasicMessageResponse reassignAsset(AssetReassignDto assetReassignDto);
 
     BasicMessageResponse damageAsset(AssetDamageDto assetDamageDto);
 

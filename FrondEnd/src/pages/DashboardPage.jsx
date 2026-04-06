@@ -1,82 +1,109 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../context/AuthContext";
-import ReportsPanel from "./ReportsPanel";
+import {
+  AlertTriangleIcon,
+  ArmchairIcon,
+  BuildingIcon,
+  ChevronLeftIcon,
+  CirclePlusIcon,
+  ClockIcon,
+  DashboardIcon,
+  EditIcon,
+  FileTextIcon,
+  LogOutIcon,
+  PackageIcon,
+  RefreshCwIcon,
+  RotateCcwIcon,
+  ShieldCheckIcon,
+  UserCogIcon,
+  UserPlusIcon
+} from "../components/AppIcons";
+import DashboardOverview from "./DashboardOverview";
+import ReportsPanel from "./ReportsPanelFigma";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080";
 const MESSAGE_TIMEOUT_MS = 5000;
+const SIDEBAR_COLLAPSE_STORAGE_KEY = "asset-portal-sidebar-collapsed";
+const WARRANTY_ALERT_WINDOW_DAYS = 30;
 
 const ACTION_CARDS = [
   {
     key: "new-asset",
-    icon: "+",
+    icon: CirclePlusIcon,
     title: "New Asset",
     description: "Add a single new asset to the inventory."
   },
   {
     key: "bulk-add",
-    icon: "++",
+    icon: CirclePlusIcon,
     title: "Bulk Add Assets",
     description: "Add multiple assets with auto-generated serial numbers."
   },
   {
     key: "edit-asset",
-    icon: "ED",
+    icon: EditIcon,
     title: "Edit Asset",
     description: "Update asset details, status, and serial information."
   },
   {
     key: "return-asset",
-    icon: "R",
+    icon: RotateCcwIcon,
     title: "Return Asset",
     description: "Process asset returns from employees."
   },
   {
     key: "mark-expired",
-    icon: "EX",
+    icon: ClockIcon,
     title: "Mark as Expired",
     description: "Mark an asset as expired or out of warranty."
   },
   {
     key: "mark-damaged",
-    icon: "!",
+    icon: AlertTriangleIcon,
     title: "Mark as Damaged",
     description: "Report asset damage and severity."
   },
   {
     key: "assign-asset",
-    icon: "A",
+    icon: UserPlusIcon,
     title: "Assign Asset",
     description: "Assign an asset to an employee or section."
+  },
+  {
+    key: "reassign-asset",
+    icon: RefreshCwIcon,
+    title: "Reassign Asset",
+    description: "Transfer an assigned asset to a new employee or section."
   }
 ];
 
 const ADMIN_ACTION_CARDS = [
   {
     key: "add-section",
-    icon: "SC",
+    icon: BuildingIcon,
     title: "Add Section",
     description: "Create sections that can be used during asset assignment."
   },
   {
     key: "add-seat",
-    icon: "SN",
+    icon: ArmchairIcon,
     title: "Add Seat Number",
     description: "Save seat numbers and link them to the correct section."
   },
   {
     key: "admin-profile",
-    icon: "AP",
+    icon: UserCogIcon,
     title: "Admin Profile",
     description: "Update the admin name and change the account password."
   }
 ];
 
 const SIDEBAR_ITEMS = [
-  { key: "dashboard", label: "Dashboard", type: "panel" },
-  { key: "asset-management", label: "Asset Management", type: "panel" },
-  { key: "admin-control", label: "Admin Control", type: "panel" },
-  { key: "reports", label: "Reports", type: "panel" },
-  { key: "logout", label: "Logout", type: "logout" }
+  { key: "dashboard", label: "Dashboard", type: "panel", icon: DashboardIcon },
+  { key: "asset-management", label: "Asset Management", type: "panel", icon: PackageIcon },
+  { key: "admin-control", label: "Admin Control", type: "panel", icon: ShieldCheckIcon },
+  { key: "reports", label: "Reports", type: "panel", icon: FileTextIcon },
+  { key: "logout", label: "Logout", type: "logout", icon: LogOutIcon }
 ];
 
 const createEmptyAssetForm = () => ({
@@ -132,6 +159,19 @@ const createEmptyReturnAssetForm = () => ({
   dateOfIssue: "",
   returnDate: getTodayDateString(),
   conditionAtReturn: "Good",
+  remarks: ""
+});
+
+const createEmptyReassignAssetForm = () => ({
+  assetId: "",
+  category: "",
+  currentAssignedTo: "",
+  currentSection: "",
+  currentSeatNumber: "",
+  assignedTo: "",
+  section: "",
+  seatNumber: "",
+  dateOfIssue: getTodayDateString(),
   remarks: ""
 });
 
@@ -231,9 +271,50 @@ async function parseResponse(response) {
   return payload;
 }
 
+function parseLocalDate(value) {
+  if (!value) {
+    return null;
+  }
+
+  const [year, month, day] = String(value).split("-").map(Number);
+
+  if (!year || !month || !day) {
+    return null;
+  }
+
+  return new Date(year, month - 1, day);
+}
+
+function startOfDay(date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function formatDisplayDate(value) {
+  if (!value) {
+    return "";
+  }
+
+  const parsedDate = parseLocalDate(value);
+
+  return parsedDate
+    ? parsedDate.toLocaleDateString("en-GB", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric"
+    })
+    : value;
+}
+
 export default function DashboardPage() {
   const { user, logout, updateSession } = useAuth();
-  const [activePanel, setActivePanel] = useState("asset-management");
+  const [activePanel, setActivePanel] = useState("dashboard");
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    try {
+      return window.localStorage.getItem(SIDEBAR_COLLAPSE_STORAGE_KEY) === "true";
+    } catch {
+      return false;
+    }
+  });
   const [categories, setCategories] = useState([]);
   const [sections, setSections] = useState([]);
   const [assetSummary, setAssetSummary] = useState({
@@ -243,8 +324,13 @@ export default function DashboardPage() {
     damagedAssets: 0,
     expiredAssets: 0
   });
+  const [warrantyAlerts, setWarrantyAlerts] = useState({
+    overdue: [],
+    dueSoon: []
+  });
   const [isLoadingEditableAssets, setIsLoadingEditableAssets] = useState(false);
   const [isLoadingActiveAssets, setIsLoadingActiveAssets] = useState(false);
+  const [isLoadingWarrantyAlerts, setIsLoadingWarrantyAlerts] = useState(true);
   const [isLoadingCategories, setIsLoadingCategories] = useState(true);
   const [isLoadingSections, setIsLoadingSections] = useState(true);
   const [isLoadingSeatNumbers, setIsLoadingSeatNumbers] = useState(true);
@@ -254,6 +340,7 @@ export default function DashboardPage() {
   const [isSavingBulkAssets, setIsSavingBulkAssets] = useState(false);
   const [isSavingEditAsset, setIsSavingEditAsset] = useState(false);
   const [isSavingAssignAsset, setIsSavingAssignAsset] = useState(false);
+  const [isSavingReassignAsset, setIsSavingReassignAsset] = useState(false);
   const [isSavingDamagedAsset, setIsSavingDamagedAsset] = useState(false);
   const [isSavingExpiredAsset, setIsSavingExpiredAsset] = useState(false);
   const [isSavingReturnAsset, setIsSavingReturnAsset] = useState(false);
@@ -266,6 +353,7 @@ export default function DashboardPage() {
   const [bulkAssetForm, setBulkAssetForm] = useState(createEmptyBulkAssetForm);
   const [editAssetForm, setEditAssetForm] = useState(createEmptyEditAssetForm);
   const [assignAssetForm, setAssignAssetForm] = useState(createEmptyAssignAssetForm);
+  const [reassignAssetForm, setReassignAssetForm] = useState(createEmptyReassignAssetForm);
   const [returnAssetForm, setReturnAssetForm] = useState(createEmptyReturnAssetForm);
   const [damagedAssetForm, setDamagedAssetForm] = useState(createEmptyDamagedAssetForm);
   const [expiredAssetForm, setExpiredAssetForm] = useState(createEmptyExpiredAssetForm);
@@ -293,6 +381,7 @@ export default function DashboardPage() {
     activeModal?.key === "bulk-add" ||
     activeModal?.key === "edit-asset" ||
     activeModal?.key === "assign-asset" ||
+    activeModal?.key === "reassign-asset" ||
     activeModal?.key === "mark-damaged" ||
     activeModal?.key === "mark-expired" ||
     activeModal?.key === "return-asset" ||
@@ -307,6 +396,7 @@ export default function DashboardPage() {
     editAssetForm.status
   );
   const isAssetPanel = activePanel === "asset-management";
+  const isDashboardPanel = activePanel === "dashboard";
   const isAdminPanel = activePanel === "admin-control";
   const isReportsPanel = activePanel === "reports";
   const currentSidebarLabel =
@@ -318,14 +408,30 @@ export default function DashboardPage() {
   const selectedAssignSection = sections.find(
     (section) => normalizeText(section.sectionName) === normalizeText(assignAssetForm.section)
   );
+  const selectedReassignAsset = assignedAssets.find(
+    (asset) => String(asset.assetId) === String(reassignAssetForm.assetId)
+  );
+  const selectedReassignSection = sections.find(
+    (section) => normalizeText(section.sectionName) === normalizeText(reassignAssetForm.section)
+  );
   const assignAssetRequiresSeatNumber = SEAT_REQUIRED_CATEGORIES.has(normalizeText(assignAssetForm.category));
+  const reassignAssetRequiresSeatNumber = SEAT_REQUIRED_CATEGORIES.has(normalizeText(reassignAssetForm.category));
+  const reassignAssetShowsEmployeeName = ["laptop", "desktop"].includes(
+    normalizeText(reassignAssetForm.category)
+  );
   const assignSeatNumbersForSection = selectedAssignSection
     ? seatNumbers.filter((seat) => seat.sectionId === selectedAssignSection.id)
+    : [];
+  const reassignSeatNumbersForSection = selectedReassignSection
+    ? seatNumbers.filter((seat) => seat.sectionId === selectedReassignSection.id)
     : [];
   const seatNumberConflict = seatNumbers.find((seat) => (
     normalizeText(seat.seatNumber) === normalizeText(seatNumberForm.seatNumber) &&
     String(seat.id) !== String(seatNumberForm.id)
   ));
+  const warrantyOverdueCount = warrantyAlerts.overdue.length;
+  const warrantyDueSoonCount = warrantyAlerts.dueSoon.length;
+  const nearestWarrantyAlert = warrantyAlerts.overdue[0] ?? warrantyAlerts.dueSoon[0] ?? null;
 
   const authHeaders = {
     Authorization: `${user?.tokenType ?? "Bearer"} ${user?.token ?? ""}`
@@ -345,6 +451,61 @@ export default function DashboardPage() {
       damagedAssets: payload?.damagedAssets ?? 0,
       expiredAssets: payload?.expiredAssets ?? 0
     });
+  };
+
+  const fetchWarrantyAlerts = async () => {
+    const params = new URLSearchParams({
+      search: "",
+      category: "All",
+      status: "All",
+      sortBy: "warrantyExpiryDate",
+      sortDir: "asc",
+      page: "0",
+      size: "5000"
+    });
+    const response = await fetch(`${API_BASE_URL}/api/reports/detailed?${params}`, {
+      method: "GET",
+      headers: authHeaders
+    });
+
+    const payload = await parseResponse(response);
+    const items = Array.isArray(payload?.items) ? payload.items : [];
+    const activeStatuses = new Set(["available", "assigned"]);
+    const today = startOfDay(new Date());
+    const soonThreshold = new Date(today);
+    soonThreshold.setDate(soonThreshold.getDate() + WARRANTY_ALERT_WINDOW_DAYS);
+
+    const categorizedAlerts = items.reduce((accumulator, item) => {
+      const warrantyDate = parseLocalDate(item.warrantyExpiryDate);
+      const normalizedStatus = normalizeText(item.status);
+
+      if (!warrantyDate || !activeStatuses.has(normalizedStatus)) {
+        return accumulator;
+      }
+
+      const alertItem = {
+        assetId: item.assetId,
+        assetDisplayId: item.assetDisplayId,
+        assetName: item.assetName,
+        categoryName: item.categoryName,
+        warrantyExpiryDate: item.warrantyExpiryDate,
+        status: item.status
+      };
+
+      if (warrantyDate < today) {
+        accumulator.overdue.push(alertItem);
+      } else if (warrantyDate <= soonThreshold) {
+        accumulator.dueSoon.push(alertItem);
+      }
+
+      return accumulator;
+    }, { overdue: [], dueSoon: [] });
+
+    setWarrantyAlerts(categorizedAlerts);
+  };
+
+  const refreshAssetInsights = async () => {
+    await Promise.all([fetchAssetSummary(), fetchWarrantyAlerts()]);
   };
 
   const fetchEditableAssets = async () => {
@@ -423,6 +584,18 @@ export default function DashboardPage() {
     const code = (section?.sectionCode ?? "").trim();
     return code ? `${section.sectionName} (${code})` : section.sectionName;
   };
+
+  const toggleSidebar = () => {
+    setIsSidebarCollapsed((current) => !current);
+  };
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SIDEBAR_COLLAPSE_STORAGE_KEY, String(isSidebarCollapsed));
+    } catch {
+      // Ignore storage errors and keep the current UI state in memory.
+    }
+  }, [isSidebarCollapsed]);
 
   useEffect(() => {
     if (!pageError && !pageNotice) {
@@ -534,9 +707,10 @@ export default function DashboardPage() {
       setIsLoadingCategories(true);
       setIsLoadingSections(true);
       setIsLoadingSeatNumbers(true);
+      setIsLoadingWarrantyAlerts(true);
 
       try {
-        const [categoryPayload, summaryPayload, sectionPayload, seatNumberPayload] = await Promise.all([
+        const [categoryPayload, summaryPayload, sectionPayload, seatNumberPayload, warrantyPayload] = await Promise.all([
           fetch(`${API_BASE_URL}/api/categories`, {
             method: "GET",
             headers: authHeaders
@@ -546,13 +720,49 @@ export default function DashboardPage() {
             headers: authHeaders
           }).then(parseResponse),
           fetchSections(),
-          fetchSeatNumbers()
+          fetchSeatNumbers(),
+          fetch(`${API_BASE_URL}/api/reports/detailed?search=&category=All&status=All&sortBy=warrantyExpiryDate&sortDir=asc&page=0&size=5000`, {
+            method: "GET",
+            headers: authHeaders
+          }).then(parseResponse)
         ]);
 
         if (isMounted) {
+          const activeStatuses = new Set(["available", "assigned"]);
+          const today = startOfDay(new Date());
+          const soonThreshold = new Date(today);
+          soonThreshold.setDate(soonThreshold.getDate() + WARRANTY_ALERT_WINDOW_DAYS);
+          const warrantyItems = Array.isArray(warrantyPayload?.items) ? warrantyPayload.items : [];
+          const nextWarrantyAlerts = warrantyItems.reduce((accumulator, item) => {
+            const warrantyDate = parseLocalDate(item.warrantyExpiryDate);
+            const normalizedStatus = normalizeText(item.status);
+
+            if (!warrantyDate || !activeStatuses.has(normalizedStatus)) {
+              return accumulator;
+            }
+
+            const alertItem = {
+              assetId: item.assetId,
+              assetDisplayId: item.assetDisplayId,
+              assetName: item.assetName,
+              categoryName: item.categoryName,
+              warrantyExpiryDate: item.warrantyExpiryDate,
+              status: item.status
+            };
+
+            if (warrantyDate < today) {
+              accumulator.overdue.push(alertItem);
+            } else if (warrantyDate <= soonThreshold) {
+              accumulator.dueSoon.push(alertItem);
+            }
+
+            return accumulator;
+          }, { overdue: [], dueSoon: [] });
+
           setCategories(Array.isArray(categoryPayload) ? categoryPayload : []);
           setSections(Array.isArray(sectionPayload) ? sectionPayload : []);
           setSeatNumbers(Array.isArray(seatNumberPayload) ? seatNumberPayload : []);
+          setWarrantyAlerts(nextWarrantyAlerts);
           setAssetSummary({
             totalAssets: summaryPayload?.totalAssets ?? 0,
             availableAssets: summaryPayload?.availableAssets ?? 0,
@@ -570,6 +780,7 @@ export default function DashboardPage() {
           setIsLoadingCategories(false);
           setIsLoadingSections(false);
           setIsLoadingSeatNumbers(false);
+          setIsLoadingWarrantyAlerts(false);
         }
       }
     };
@@ -626,6 +837,21 @@ export default function DashboardPage() {
         setModalError(error.message);
       } finally {
         setIsLoadingAvailableAssets(false);
+      }
+    }
+
+    if (card.key === "reassign-asset") {
+      setReassignAssetForm(createEmptyReassignAssetForm());
+      setAssignedAssets([]);
+      setIsLoadingAssignedAssets(true);
+
+      try {
+        const payload = await fetchAssignedAssets();
+        setAssignedAssets(payload);
+      } catch (error) {
+        setModalError(error.message);
+      } finally {
+        setIsLoadingAssignedAssets(false);
       }
     }
 
@@ -844,6 +1070,40 @@ export default function DashboardPage() {
     setAssignAssetForm((current) => ({ ...current, [name]: value }));
   };
 
+  const handleReassignAssetFormChange = (event) => {
+    const { name, value } = event.target;
+
+    if (name === "assetId") {
+      const selectedAsset = assignedAssets.find((asset) => String(asset.assetId) === value);
+
+      setReassignAssetForm((current) => ({
+        ...current,
+        assetId: value,
+        category: selectedAsset?.categoryName ?? "",
+        currentAssignedTo: selectedAsset?.assignedTo ?? "",
+        currentSection: selectedAsset?.section ?? "",
+        currentSeatNumber: selectedAsset?.seatNumber ?? "",
+        assignedTo: selectedAsset?.assignedTo ?? "",
+        section: selectedAsset?.section ?? "",
+        seatNumber: selectedAsset?.seatNumber ?? ""
+      }));
+
+      return;
+    }
+
+    if (name === "section") {
+      setReassignAssetForm((current) => ({
+        ...current,
+        section: value,
+        seatNumber: ""
+      }));
+
+      return;
+    }
+
+    setReassignAssetForm((current) => ({ ...current, [name]: value }));
+  };
+
   const handleReturnAssetFormChange = (event) => {
     const { name, value } = event.target;
 
@@ -875,7 +1135,8 @@ export default function DashboardPage() {
       setExpiredAssetForm((current) => ({
         ...current,
         assetId: value,
-        category: selectedAsset?.categoryName ?? ""
+        category: selectedAsset?.categoryName ?? "",
+        expiryDate: selectedAsset?.warrantyExpiryDate ?? current.expiryDate
       }));
 
       return;
@@ -953,7 +1214,7 @@ export default function DashboardPage() {
       });
 
       const payload = await parseResponse(response);
-      await fetchAssetSummary();
+      await refreshAssetInsights();
       closeModal();
       setPageNotice(`Asset "${payload.assetName}" added successfully.`);
       setAssetForm(createEmptyAssetForm());
@@ -993,7 +1254,7 @@ export default function DashboardPage() {
       const payload = await parseResponse(response);
       const assetCount = Array.isArray(payload) ? payload.length : Number(bulkAssetForm.quantity);
 
-      await fetchAssetSummary();
+      await refreshAssetInsights();
       closeModal();
       setPageNotice(`${assetCount} assets added successfully. Serial numbers were generated automatically.`);
       setBulkAssetForm(createEmptyBulkAssetForm());
@@ -1029,7 +1290,7 @@ export default function DashboardPage() {
       });
 
       const payload = await parseResponse(response);
-      await fetchAssetSummary();
+      await refreshAssetInsights();
       closeModal();
       setPageNotice(payload.message ?? "Asset assigned successfully.");
       setAssignAssetForm(createEmptyAssignAssetForm());
@@ -1037,6 +1298,44 @@ export default function DashboardPage() {
       setModalError(error.message);
     } finally {
       setIsSavingAssignAsset(false);
+    }
+  };
+
+  const handleReassignAsset = async (event) => {
+    event.preventDefault();
+    setPageError("");
+    setPageNotice("");
+    setModalError("");
+    setIsSavingReassignAsset(true);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/assets/reassign`, {
+        method: "POST",
+        headers: {
+          ...authHeaders,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          assetId: Number(reassignAssetForm.assetId),
+          assignedTo: reassignAssetShowsEmployeeName
+            ? reassignAssetForm.assignedTo
+            : (reassignAssetForm.assignedTo || reassignAssetForm.currentAssignedTo),
+          section: reassignAssetForm.section,
+          seatNumber: reassignAssetForm.seatNumber,
+          dateOfIssue: reassignAssetForm.dateOfIssue,
+          remarks: reassignAssetForm.remarks
+        })
+      });
+
+      const payload = await parseResponse(response);
+      await refreshAssetInsights();
+      closeModal();
+      setPageNotice(payload.message ?? "Asset reassigned successfully.");
+      setReassignAssetForm(createEmptyReassignAssetForm());
+    } catch (error) {
+      setModalError(error.message);
+    } finally {
+      setIsSavingReassignAsset(false);
     }
   };
 
@@ -1085,7 +1384,7 @@ export default function DashboardPage() {
       });
 
       const payload = await parseResponse(response);
-      await fetchAssetSummary();
+      await refreshAssetInsights();
       closeModal();
       setPageNotice(`Asset "${payload.assetName}" updated successfully.`);
     } catch (error) {
@@ -1119,7 +1418,7 @@ export default function DashboardPage() {
       });
 
       const payload = await parseResponse(response);
-      await fetchAssetSummary();
+      await refreshAssetInsights();
       closeModal();
       setPageNotice(payload.message ?? "Asset marked as damaged successfully.");
       setDamagedAssetForm(createEmptyDamagedAssetForm());
@@ -1153,7 +1452,7 @@ export default function DashboardPage() {
       });
 
       const payload = await parseResponse(response);
-      await fetchAssetSummary();
+      await refreshAssetInsights();
       closeModal();
       setPageNotice(payload.message ?? "Asset returned successfully.");
       setReturnAssetForm(createEmptyReturnAssetForm());
@@ -1187,7 +1486,7 @@ export default function DashboardPage() {
       });
 
       const payload = await parseResponse(response);
-      await fetchAssetSummary();
+      await refreshAssetInsights();
       closeModal();
       setPageNotice(payload.message ?? "Asset marked as expired successfully.");
       setExpiredAssetForm(createEmptyExpiredAssetForm());
@@ -1448,6 +1747,14 @@ export default function DashboardPage() {
     </>
   );
 
+  const renderDashboardPanel = () => (
+    <DashboardOverview
+      setPageError={setPageError}
+      setPageNotice={setPageNotice}
+      user={user}
+    />
+  );
+
   const renderAssetPanel = () => (
     <>
       <header className="asset-page-header">
@@ -1484,13 +1791,51 @@ export default function DashboardPage() {
         {ACTION_CARDS.map((card) => (
           <button
             key={card.key}
-            className="asset-action-card"
+            className={
+              card.key === "mark-expired" && (warrantyOverdueCount > 0 || warrantyDueSoonCount > 0)
+                ? "asset-action-card asset-action-card-alert"
+                : "asset-action-card"
+            }
             type="button"
             onClick={() => openModal(card)}
           >
-            <span className="asset-action-icon">{card.icon}</span>
-            <strong>{card.title}</strong>
-            <span>{card.description}</span>
+            <span className="asset-action-icon">
+              <card.icon />
+            </span>
+            <div className="asset-action-copy">
+              <strong>{card.title}</strong>
+              <span className="asset-action-description">{card.description}</span>
+
+              {card.key === "mark-expired" ? (
+                <div className="asset-action-alerts">
+                  {isLoadingWarrantyAlerts ? (
+                    <p className="asset-action-alert-line">Checking warranty alerts...</p>
+                  ) : warrantyOverdueCount === 0 && warrantyDueSoonCount === 0 ? (
+                    <p className="asset-action-alert-line asset-action-alert-line-muted">
+                      No warranty alerts right now.
+                    </p>
+                  ) : (
+                    <>
+                      {warrantyOverdueCount > 0 ? (
+                        <p className="asset-action-alert-line asset-action-alert-line-danger">
+                          {warrantyOverdueCount} asset{warrantyOverdueCount === 1 ? "" : "s"} past warranty
+                        </p>
+                      ) : null}
+                      {warrantyDueSoonCount > 0 ? (
+                        <p className="asset-action-alert-line asset-action-alert-line-warning">
+                          {warrantyDueSoonCount} due within {WARRANTY_ALERT_WINDOW_DAYS} days
+                        </p>
+                      ) : null}
+                      {nearestWarrantyAlert ? (
+                        <p className="asset-action-alert-note">
+                          Next: {nearestWarrantyAlert.assetDisplayId} • {formatDisplayDate(nearestWarrantyAlert.warrantyExpiryDate)}
+                        </p>
+                      ) : null}
+                    </>
+                  )}
+                </div>
+              ) : null}
+            </div>
           </button>
         ))}
       </section>
@@ -1527,9 +1872,13 @@ export default function DashboardPage() {
             type="button"
             onClick={() => openModal(card)}
           >
-            <span className="asset-action-icon">{card.icon}</span>
-            <strong>{card.title}</strong>
-            <span>{card.description}</span>
+            <span className="asset-action-icon">
+              <card.icon />
+            </span>
+            <div className="asset-action-copy">
+              <strong>{card.title}</strong>
+              <span className="asset-action-description">{card.description}</span>
+            </div>
           </button>
         ))}
       </section>
@@ -1630,14 +1979,21 @@ export default function DashboardPage() {
         </div>
       ) : null}
 
-      <div className="asset-layout">
+      <div className={isSidebarCollapsed ? "asset-layout asset-layout-sidebar-collapsed" : "asset-layout"}>
         <aside className="asset-sidebar">
           <div className="asset-sidebar-brand">
-            <div>
+            <div className="asset-sidebar-brand-copy">
               <h2>Asset Portal</h2>
               <p>{user?.username}</p>
             </div>
-            <span className="asset-sidebar-chevron">&lt;</span>
+            <button
+              aria-label={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              className={isSidebarCollapsed ? "asset-sidebar-chevron asset-sidebar-chevron-collapsed" : "asset-sidebar-chevron"}
+              type="button"
+              onClick={toggleSidebar}
+            >
+              <ChevronLeftIcon />
+            </button>
           </div>
 
           <nav className="asset-sidebar-nav">
@@ -1653,24 +2009,18 @@ export default function DashboardPage() {
                 onClick={() => handleSidebarItemClick(item)}
               >
                 <span className="asset-sidebar-icon">
-                  {item.key === "dashboard"
-                    ? "D"
-                    : item.key === "asset-management"
-                      ? "AM"
-                      : item.key === "admin-control"
-                        ? "AC"
-                        : item.key === "reports"
-                          ? "RP"
-                          : "LO"}
+                  <item.icon />
                 </span>
-                <span>{item.label}</span>
+                <span className="asset-sidebar-label">{item.label}</span>
               </button>
             ))}
           </nav>
         </aside>
 
         <section className="asset-content">
-          {isAssetPanel
+          {isDashboardPanel
+            ? renderDashboardPanel()
+            : isAssetPanel
             ? renderAssetPanel()
             : isAdminPanel
               ? renderAdminPanel()
@@ -2548,6 +2898,204 @@ export default function DashboardPage() {
                   </div>
                 </form>
               </>
+            ) : activeModal.key === "reassign-asset" ? (
+              <>
+                <div className="asset-modal-header">
+                  <div>
+                    <p className="auth-modal-caption">Asset Management</p>
+                    <h3>Reassign Asset</h3>
+                  </div>
+
+                  <button
+                    aria-label="Close reassign asset dialog"
+                    className="modal-close-button"
+                    type="button"
+                    onClick={closeModal}
+                  >
+                    X
+                  </button>
+                </div>
+
+                <form className="asset-form" onSubmit={handleReassignAsset}>
+                  <div className="asset-modal-scroll">
+                    <div className="asset-form-grid">
+                      <label className="field asset-field-full">
+                        <span>Asset ID</span>
+                        <select
+                          name="assetId"
+                          onChange={handleReassignAssetFormChange}
+                          value={reassignAssetForm.assetId}
+                        >
+                          <option value="">
+                            {isLoadingAssignedAssets
+                              ? "Loading assigned assets..."
+                              : assignedAssets.length === 0
+                                ? "No assigned assets available"
+                                : "Select assigned asset"}
+                          </option>
+                          {assignedAssets.map((asset) => (
+                            <option key={asset.assetId} value={asset.assetId}>
+                              {(asset.assetDisplayId ?? asset.assetId)} - Currently: {asset.assignedTo || asset.section || "Assigned"}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+
+                    {selectedReassignAsset ? (
+                      <div className="asset-form-grid">
+                        <label className="field">
+                          <span>Category</span>
+                          <input
+                            className="readonly-field"
+                            readOnly
+                            type="text"
+                            value={reassignAssetForm.category}
+                          />
+                        </label>
+
+                        <label className="field">
+                          <span>Current Assignee</span>
+                          <input
+                            className="readonly-field"
+                            readOnly
+                            type="text"
+                            value={reassignAssetForm.currentAssignedTo || reassignAssetForm.currentSection || "-"}
+                          />
+                        </label>
+
+                        <label className="field asset-field-full">
+                          <span>New Date of Issue</span>
+                          <input
+                            name="dateOfIssue"
+                            onChange={handleReassignAssetFormChange}
+                            type="date"
+                            value={reassignAssetForm.dateOfIssue}
+                          />
+                        </label>
+
+                        {reassignAssetShowsEmployeeName ? (
+                          <label className="field asset-field-full">
+                            <span>New Employee Name</span>
+                            <input
+                              name="assignedTo"
+                              onChange={handleReassignAssetFormChange}
+                              placeholder="Enter new employee name"
+                              type="text"
+                              value={reassignAssetForm.assignedTo}
+                            />
+                          </label>
+                        ) : null}
+
+                        <label className="field asset-field-full">
+                          <span>New Section</span>
+                          <select
+                            name="section"
+                            onChange={handleReassignAssetFormChange}
+                            value={reassignAssetForm.section}
+                          >
+                            <option value="">
+                              {isLoadingSections
+                                ? "Loading sections..."
+                                : sections.length === 0
+                                  ? "No sections available"
+                                  : "Select section"}
+                            </option>
+                            {sections.map((section) => (
+                              <option key={section.id} value={section.sectionName}>
+                                {getSectionOptionLabel(section)}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+
+                        {reassignAssetRequiresSeatNumber ? (
+                          <label className="field asset-field-full">
+                            <span>New Seat Number</span>
+                            <select
+                              disabled={!reassignAssetForm.section}
+                              name="seatNumber"
+                              onChange={handleReassignAssetFormChange}
+                              value={reassignAssetForm.seatNumber}
+                            >
+                              <option value="">
+                                {!reassignAssetForm.section
+                                  ? "Select section first"
+                                  : reassignSeatNumbersForSection.length === 0
+                                    ? "No seat numbers available"
+                                    : "Select seat"}
+                              </option>
+                              {reassignSeatNumbersForSection.map((seat) => (
+                                <option key={seat.id} value={seat.seatNumber}>
+                                  {seat.seatNumber}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        ) : null}
+                      </div>
+                    ) : !isLoadingAssignedAssets && assignedAssets.length > 0 ? (
+                      <p className="asset-empty-state">
+                        Select an assigned asset first to load the reassign form.
+                      </p>
+                    ) : null}
+
+                    {!isLoadingAssignedAssets && assignedAssets.length === 0 ? (
+                      <p className="asset-empty-state">
+                        No assigned assets are ready to reassign yet. Assign an asset first, then
+                        transfer it here.
+                      </p>
+                    ) : null}
+
+                    {!isLoadingSections && sections.length === 0 ? (
+                      <p className="asset-empty-state">
+                        No sections are available yet. Add a section in Admin Control before
+                        reassigning assets.
+                      </p>
+                    ) : null}
+
+                    {reassignAssetRequiresSeatNumber && !reassignAssetForm.section ? (
+                      <p className="asset-empty-state">
+                        This asset category requires a seat number. Select the new section first,
+                        then choose one of its seat numbers.
+                      </p>
+                    ) : null}
+
+                    {reassignAssetRequiresSeatNumber &&
+                    reassignAssetForm.section &&
+                    reassignSeatNumbersForSection.length === 0 ? (
+                      <p className="asset-empty-state">
+                        No seat numbers are available for the selected section. Add a seat number
+                        in Admin Control before reassigning this asset.
+                      </p>
+                    ) : null}
+
+                    {modalError ? <p className="message error-message">{modalError}</p> : null}
+                  </div>
+
+                  <div className="asset-modal-footer">
+                    <button className="secondary-button" type="button" onClick={closeModal}>
+                      Cancel
+                    </button>
+                    <button
+                      className="primary-button"
+                      disabled={
+                        isSavingReassignAsset ||
+                        isLoadingAssignedAssets ||
+                        isLoadingSections ||
+                        !selectedReassignAsset ||
+                        assignedAssets.length === 0 ||
+                        sections.length === 0 ||
+                        (reassignAssetShowsEmployeeName && !reassignAssetForm.assignedTo.trim()) ||
+                        (reassignAssetRequiresSeatNumber && !reassignAssetForm.seatNumber)
+                      }
+                      type="submit"
+                    >
+                      {isSavingReassignAsset ? "Saving..." : "Reassign"}
+                    </button>
+                  </div>
+                </form>
+              </>
             ) : activeModal.key === "mark-expired" ? (
               <>
                 <div className="asset-modal-header">
@@ -2639,6 +3187,26 @@ export default function DashboardPage() {
                         No active assets are available to expire. Only assets with Available or
                         Assigned status can be marked as expired.
                       </p>
+                    ) : null}
+
+                    {!isLoadingWarrantyAlerts && (warrantyOverdueCount > 0 || warrantyDueSoonCount > 0) ? (
+                      <div className="asset-action-alerts asset-action-alerts-modal">
+                        {warrantyOverdueCount > 0 ? (
+                          <p className="asset-action-alert-line asset-action-alert-line-danger">
+                            {warrantyOverdueCount} asset{warrantyOverdueCount === 1 ? "" : "s"} already past warranty
+                          </p>
+                        ) : null}
+                        {warrantyDueSoonCount > 0 ? (
+                          <p className="asset-action-alert-line asset-action-alert-line-warning">
+                            {warrantyDueSoonCount} due within {WARRANTY_ALERT_WINDOW_DAYS} days
+                          </p>
+                        ) : null}
+                        {nearestWarrantyAlert ? (
+                          <p className="asset-action-alert-note">
+                            Next alert: {nearestWarrantyAlert.assetDisplayId} • {nearestWarrantyAlert.assetName} • {formatDisplayDate(nearestWarrantyAlert.warrantyExpiryDate)}
+                          </p>
+                        ) : null}
+                      </div>
                     ) : null}
 
                     {modalError ? <p className="message error-message">{modalError}</p> : null}

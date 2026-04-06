@@ -5,6 +5,7 @@ import com.office.assetmanagement.asset.dto.ActiveAssetDto;
 import com.office.assetmanagement.asset.dto.AssetAssignDto;
 import com.office.assetmanagement.asset.dto.AssetDamageDto;
 import com.office.assetmanagement.asset.dto.AssetExpireDto;
+import com.office.assetmanagement.asset.dto.AssetReassignDto;
 import com.office.assetmanagement.asset.dto.AssetReturnDto;
 import com.office.assetmanagement.asset.dto.AssetSummaryDto;
 import com.office.assetmanagement.asset.dto.AvailableAssetDto;
@@ -49,6 +50,7 @@ public class AssetServiceImpl implements AssetService {
     private static final String EDIT_SOURCE = "EDIT_ASSET";
     private static final String NEW_ASSET_SOURCE = "NEW_ASSET";
     private static final String ASSIGN_SOURCE = "ASSIGN_ASSET";
+    private static final String REASSIGN_SOURCE = "REASSIGN_ASSET";
     private static final String DAMAGE_SOURCE = "DAMAGE_ASSET";
     private static final String EXPIRE_SOURCE = "EXPIRE_ASSET";
     private static final String RETURN_SOURCE = "RETURN_ASSET";
@@ -335,6 +337,47 @@ public class AssetServiceImpl implements AssetService {
 
     @Override
     @Transactional
+    public BasicMessageResponse reassignAsset(AssetReassignDto assetReassignDto) {
+        Asset asset = assetRepository.findByIdAndStatusIgnoreCase(assetReassignDto.getAssetId(), ASSIGNED_STATUS)
+                .orElseThrow(() -> new IllegalArgumentException("Selected asset is not currently assigned."));
+        String previousAssignedTo = normalizeOptional(asset.getAssignedTo());
+        String previousSection = normalizeOptional(asset.getSection());
+        String previousSeatNumber = normalizeOptional(asset.getSeatNumber());
+        String nextSection = normalize(assetReassignDto.getSection());
+        String nextAssignedTo = normalize(assetReassignDto.getAssignedTo());
+        String nextSeatNumber = normalize(assetReassignDto.getSeatNumber());
+
+        if (assetReassignDto.getDateOfIssue().isBefore(asset.getPurchaseDate())) {
+            throw new IllegalArgumentException("Date of issue cannot be before purchase date.");
+        }
+
+        asset.setAssignedTo(nextAssignedTo);
+        asset.setSection(nextSection);
+        asset.setSeatNumber(resolveAssignedSeatNumber(asset.getCategory().getName(), nextSection, nextSeatNumber));
+        asset.setDateOfIssue(assetReassignDto.getDateOfIssue());
+        asset.setRemarks(resolveUpdatedRemarks(asset.getRemarks(), assetReassignDto.getRemarks()));
+
+        Asset savedAsset = assetRepository.save(asset);
+        assetStatusHistoryRepository.save(createHistoryEntry(
+                savedAsset,
+                capitalize(ASSIGNED_STATUS),
+                capitalize(ASSIGNED_STATUS),
+                REASSIGN_SOURCE,
+                buildReassignmentHistoryDetails(
+                        previousAssignedTo,
+                        previousSection,
+                        previousSeatNumber,
+                        savedAsset
+                )
+        ));
+
+        return BasicMessageResponse.builder()
+                .message("Asset reassigned successfully.")
+                .build();
+    }
+
+    @Override
+    @Transactional
     public BasicMessageResponse damageAsset(AssetDamageDto assetDamageDto) {
         Asset asset = assetRepository.findByIdAndStatusIn(
                         assetDamageDto.getAssetId(),
@@ -601,6 +644,37 @@ public class AssetServiceImpl implements AssetService {
                         asset.getSection(),
                         seatNumber
                 );
+    }
+
+    private String buildReassignmentHistoryDetails(
+            String previousAssignedTo,
+            String previousSection,
+            String previousSeatNumber,
+            Asset asset
+    ) {
+        String nextSeatNumber = normalizeOptional(asset.getSeatNumber());
+        StringBuilder builder = new StringBuilder("Reassigned");
+
+        if (previousAssignedTo != null) {
+            builder.append(" from ").append(previousAssignedTo);
+        }
+
+        if (previousSection != null) {
+            builder.append(" in ").append(previousSection);
+        }
+
+        if (previousSeatNumber != null) {
+            builder.append(" at seat ").append(previousSeatNumber);
+        }
+
+        builder.append(" to ").append(asset.getAssignedTo()).append(" in ").append(asset.getSection());
+
+        if (nextSeatNumber != null) {
+            builder.append(" at seat ").append(nextSeatNumber);
+        }
+
+        builder.append(".");
+        return builder.toString();
     }
 
     private String buildDamageHistoryDetails(Asset asset) {

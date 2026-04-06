@@ -5,6 +5,7 @@ import com.office.assetmanagement.asset.dto.ActiveAssetDto;
 import com.office.assetmanagement.asset.dto.AssetAssignDto;
 import com.office.assetmanagement.asset.dto.AssetDamageDto;
 import com.office.assetmanagement.asset.dto.AssetExpireDto;
+import com.office.assetmanagement.asset.dto.AssetReassignDto;
 import com.office.assetmanagement.asset.dto.AssetReturnDto;
 import com.office.assetmanagement.asset.dto.AssetSummaryDto;
 import com.office.assetmanagement.asset.dto.AvailableAssetDto;
@@ -72,6 +73,11 @@ public class AssetController {
     @PostMapping("/assign")
     public ResponseEntity<BasicMessageResponse> assignAsset(@Valid @RequestBody AssetAssignDto assetAssignDto) {
         return ResponseEntity.ok(assetService.assignAsset(assetAssignDto));
+    }
+
+    @PostMapping("/reassign")
+    public ResponseEntity<BasicMessageResponse> reassignAsset(@Valid @RequestBody AssetReassignDto assetReassignDto) {
+        return ResponseEntity.ok(assetService.reassignAsset(assetReassignDto));
     }
 
     @PostMapping("/damage")

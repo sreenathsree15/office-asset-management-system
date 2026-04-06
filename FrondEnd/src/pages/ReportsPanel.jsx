@@ -1,23 +1,33 @@
 import { useEffect, useState } from "react";
+import {
+  ArrowLeftIcon,
+  ArrowUpDownIcon,
+  FileSpreadsheetIcon,
+  FileTextIcon,
+  HistoryIcon,
+  PieChartIcon,
+  SearchIcon,
+  XIcon
+} from "../components/AppIcons";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080";
 
 const REPORT_CARDS = [
   {
     key: "detailed",
-    icon: "DV",
+    icon: FileTextIcon,
     title: "Detailed View",
     description: "View complete asset details with filters"
   },
   {
     key: "history",
-    icon: "HS",
+    icon: HistoryIcon,
     title: "History Report",
     description: "Track all asset movements and changes"
   },
   {
     key: "summary",
-    icon: "SM",
+    icon: PieChartIcon,
     title: "Summary Report",
     description: "Visual overview with charts and statistics"
   }
@@ -477,7 +487,9 @@ export default function ReportsPanel({ user, categories, setPageError, setPageNo
             type="button"
             onClick={() => handleOpenView(card.key)}
           >
-            <span className="asset-action-icon">{card.icon}</span>
+            <span className="asset-action-icon">
+              <card.icon />
+            </span>
             <strong>{card.title}</strong>
             <span>{card.description}</span>
           </button>
@@ -493,13 +505,14 @@ export default function ReportsPanel({ user, categories, setPageError, setPageNo
       </header>
 
       <button className="secondary-button report-back-button" type="button" onClick={() => setActiveView("home")}>
-        Back to Reports
+        <ArrowLeftIcon className="report-button-icon" />
+        <span>Back to Reports</span>
       </button>
 
       <section className="report-toolbar-card">
         <div className="report-filter-grid">
           <label className="report-search-field">
-            <span className="report-search-icon">Q</span>
+            <SearchIcon className="report-search-icon-svg" />
             <input
               name="search"
               onChange={handleDetailedFilterChange}
@@ -537,7 +550,8 @@ export default function ReportsPanel({ user, categories, setPageError, setPageNo
           </select>
 
           <button className="secondary-button report-filter-button" type="button" onClick={resetDetailedFilters}>
-            Clear
+            <XIcon className="report-button-icon" />
+            <span>Clear</span>
           </button>
           <button
             className="primary-button report-export-button report-export-excel"
@@ -545,7 +559,8 @@ export default function ReportsPanel({ user, categories, setPageError, setPageNo
             type="button"
             onClick={handleExportExcel}
           >
-            Excel
+            <FileSpreadsheetIcon className="report-button-icon" />
+            <span>Excel</span>
           </button>
           <button
             className="primary-button report-export-button report-export-pdf"
@@ -553,7 +568,8 @@ export default function ReportsPanel({ user, categories, setPageError, setPageNo
             type="button"
             onClick={handleExportPdf}
           >
-            PDF
+            <FileTextIcon className="report-button-icon" />
+            <span>PDF</span>
           </button>
         </div>
       </section>
@@ -565,12 +581,14 @@ export default function ReportsPanel({ user, categories, setPageError, setPageNo
               <tr>
                 <th>
                   <button className="report-sort-button" type="button" onClick={() => handleDetailedSort("assetId")}>
-                    Asset ID {detailedFilters.sortBy === "assetId" ? (detailedFilters.sortDir === "asc" ? "↑" : "↓") : "↕"}
+                    <span>Asset ID</span>
+                    <ArrowUpDownIcon className="report-sort-icon" />
                   </button>
                 </th>
                 <th>
                   <button className="report-sort-button" type="button" onClick={() => handleDetailedSort("assetName")}>
-                    Asset Name {detailedFilters.sortBy === "assetName" ? (detailedFilters.sortDir === "asc" ? "↑" : "↓") : "↕"}
+                    <span>Asset Name</span>
+                    <ArrowUpDownIcon className="report-sort-icon" />
                   </button>
                 </th>
                 <th>Category</th>
@@ -641,13 +659,14 @@ export default function ReportsPanel({ user, categories, setPageError, setPageNo
       </header>
 
       <button className="secondary-button report-back-button" type="button" onClick={() => setActiveView("home")}>
-        Back to Reports
+        <ArrowLeftIcon className="report-button-icon" />
+        <span>Back to Reports</span>
       </button>
 
       <section className="report-toolbar-card">
         <div className="report-filter-grid report-filter-grid-history">
           <label className="report-search-field">
-            <span className="report-search-icon">Q</span>
+            <SearchIcon className="report-search-icon-svg" />
             <input
               name="search"
               onChange={handleHistoryFilterChange}
@@ -671,7 +690,8 @@ export default function ReportsPanel({ user, categories, setPageError, setPageNo
           </select>
 
           <button className="secondary-button report-filter-button" type="button" onClick={resetHistoryFilters}>
-            Clear
+            <XIcon className="report-button-icon" />
+            <span>Clear</span>
           </button>
         </div>
       </section>
@@ -751,7 +771,8 @@ export default function ReportsPanel({ user, categories, setPageError, setPageNo
       </header>
 
       <button className="secondary-button report-back-button" type="button" onClick={() => setActiveView("home")}>
-        Back to Reports
+        <ArrowLeftIcon className="report-button-icon" />
+        <span>Back to Reports</span>
       </button>
 
       <section className="report-summary-grid">
