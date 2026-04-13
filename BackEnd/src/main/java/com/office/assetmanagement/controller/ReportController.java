@@ -1,6 +1,7 @@
 package com.office.assetmanagement.controller;
 
 import com.office.assetmanagement.report.dto.DetailedReportRowDto;
+import com.office.assetmanagement.report.dto.DeletedAssetReportRowDto;
 import com.office.assetmanagement.report.dto.HistoryReportRowDto;
 import com.office.assetmanagement.report.dto.PagedReportResponseDto;
 import com.office.assetmanagement.report.dto.SummaryReportDto;
@@ -42,6 +43,15 @@ public class ReportController {
             @RequestParam(defaultValue = "6") int size
     ) {
         return ResponseEntity.ok(reportService.getHistoryReport(search, action, page, size));
+    }
+
+    @GetMapping("/deleted-assets")
+    public ResponseEntity<PagedReportResponseDto<DeletedAssetReportRowDto>> getDeletedAssetsReport(
+            @RequestParam(defaultValue = "") String search,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "6") int size
+    ) {
+        return ResponseEntity.ok(reportService.getDeletedAssetsReport(search, page, size));
     }
 
     @GetMapping("/summary")

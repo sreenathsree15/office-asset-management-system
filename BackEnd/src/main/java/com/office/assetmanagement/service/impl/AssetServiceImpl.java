@@ -4,11 +4,14 @@ import com.office.assetmanagement.asset.dto.AssetBulkDto;
 import com.office.assetmanagement.asset.dto.ActiveAssetDto;
 import com.office.assetmanagement.asset.dto.AssetAssignDto;
 import com.office.assetmanagement.asset.dto.AssetDamageDto;
+import com.office.assetmanagement.asset.dto.AssetDeleteDto;
 import com.office.assetmanagement.asset.dto.AssetExpireDto;
 import com.office.assetmanagement.asset.dto.AssetReassignDto;
 import com.office.assetmanagement.asset.dto.AssetReturnDto;
+import com.office.assetmanagement.asset.dto.AssetRestoreDto;
 import com.office.assetmanagement.asset.dto.AssetSummaryDto;
 import com.office.assetmanagement.asset.dto.AvailableAssetDto;
+import com.office.assetmanagement.asset.dto.DeletableAssetDto;
 import com.office.assetmanagement.asset.dto.EditableAssetDto;
 import com.office.assetmanagement.asset.dto.AssignedAssetDto;
 import com.office.assetmanagement.asset.dto.AssetSingleDto;
@@ -16,11 +19,13 @@ import com.office.assetmanagement.asset.dto.AssetUpdateDto;
 import com.office.assetmanagement.asset.dto.SerialNumberAvailabilityDto;
 import com.office.assetmanagement.dto.BasicMessageResponse;
 import com.office.assetmanagement.model.Asset;
+import com.office.assetmanagement.model.AssetDeletionLog;
 import com.office.assetmanagement.model.AssetReturnRecord;
 import com.office.assetmanagement.model.AssetStatusHistory;
 import com.office.assetmanagement.model.Category;
 import com.office.assetmanagement.model.Section;
 import com.office.assetmanagement.repo.AssetRepository;
+import com.office.assetmanagement.repo.AssetDeletionLogRepository;
 import com.office.assetmanagement.repo.AssetReturnRecordRepository;
 import com.office.assetmanagement.repo.AssetStatusHistoryRepository;
 import com.office.assetmanagement.repo.CategoryRepository;
@@ -47,6 +52,7 @@ public class AssetServiceImpl implements AssetService {
     private static final String ASSIGNED_STATUS = "assigned";
     private static final String DAMAGED_STATUS = "damaged";
     private static final String EXPIRED_STATUS = "expired";
+    private static final String DELETED_STATUS = "deleted";
     private static final String EDIT_SOURCE = "EDIT_ASSET";
     private static final String NEW_ASSET_SOURCE = "NEW_ASSET";
     private static final String ASSIGN_SOURCE = "ASSIGN_ASSET";
@@ -54,12 +60,16 @@ public class AssetServiceImpl implements AssetService {
     private static final String DAMAGE_SOURCE = "DAMAGE_ASSET";
     private static final String EXPIRE_SOURCE = "EXPIRE_ASSET";
     private static final String RETURN_SOURCE = "RETURN_ASSET";
+    private static final String DELETE_SOURCE = "DELETE_ASSET";
+    private static final String RESTORE_SOURCE = "RESTORE_ASSET";
     private static final String GOOD_CONDITION = "good";
     private static final String DAMAGED_CONDITION = "damaged";
+    private static final String DEFAULT_ACTION_USER = "Admin";
     private static final int MAX_SERIAL_GENERATION_ATTEMPTS = 10000;
     private static final Set<String> SEAT_REQUIRED_CATEGORIES = Set.of("desktop", "printer", "ups");
 
     private final AssetRepository assetRepository;
+    private final AssetDeletionLogRepository assetDeletionLogRepository;
     private final AssetReturnRecordRepository assetReturnRecordRepository;
     private final AssetStatusHistoryRepository assetStatusHistoryRepository;
     private final CategoryRepository categoryRepository;
@@ -145,7 +155,7 @@ public class AssetServiceImpl implements AssetService {
 
     @Override
     public List<EditableAssetDto> listEditableAssets() {
-        return assetRepository.findAllByOrderByUpdatedAtDesc()
+        return assetRepository.findAllByStatusNotIgnoreCaseOrderByUpdatedAtDesc(DELETED_STATUS)
                 .stream()
                 .map(this::toEditableAssetDto)
                 .toList();
@@ -196,10 +206,28 @@ public class AssetServiceImpl implements AssetService {
     }
 
     @Override
+    public List<DeletableAssetDto> listDeletableAssets() {
+        return assetRepository.findAllByStatusNotIgnoreCaseOrderByUpdatedAtDesc(DELETED_STATUS)
+                .stream()
+                .map(asset -> DeletableAssetDto.builder()
+                        .assetId(asset.getId())
+                        .assetDisplayId(buildAssetDisplayId(asset))
+                        .assetName(asset.getAssetName())
+                        .status(capitalize(asset.getStatus()))
+                        .build())
+                .toList();
+    }
+
+    @Override
     @Transactional
     public Asset updateAsset(Long assetId, AssetUpdateDto assetUpdateDto) {
         Asset asset = assetRepository.findById(assetId)
                 .orElseThrow(() -> new IllegalArgumentException("Selected asset does not exist."));
+
+        if (DELETED_STATUS.equals(normalize(asset.getStatus()))) {
+            throw new IllegalArgumentException("Deleted assets must be restored before editing.");
+        }
+
         Category category = findCategory(assetUpdateDto.getCategoryId());
         String serialNumber = normalize(assetUpdateDto.getSerialNumber());
 
@@ -510,9 +538,90 @@ public class AssetServiceImpl implements AssetService {
     }
 
     @Override
+    @Transactional
+    public BasicMessageResponse deleteAsset(AssetDeleteDto assetDeleteDto) {
+        Asset asset = assetRepository.findById(assetDeleteDto.getAssetId())
+                .orElseThrow(() -> new IllegalArgumentException("Selected asset does not exist."));
+
+        if (DELETED_STATUS.equals(normalize(asset.getStatus()))) {
+            throw new IllegalArgumentException("Selected asset is already deleted.");
+        }
+
+        String oldStatus = capitalize(normalizeStatus(asset.getStatus()));
+        AssetDeletionLog deletionLog = AssetDeletionLog.builder()
+                .asset(asset)
+                .reason(normalizeOptional(assetDeleteDto.getReason()))
+                .deletedBy(DEFAULT_ACTION_USER)
+                .build();
+
+        asset.setStatus(DELETED_STATUS);
+        asset.setAssignedTo(null);
+        asset.setSection(null);
+        asset.setSeatNumber(null);
+        asset.setDateOfIssue(null);
+
+        Asset savedAsset = assetRepository.save(asset);
+        AssetDeletionLog savedDeletionLog = assetDeletionLogRepository.save(deletionLog);
+        assetStatusHistoryRepository.save(createHistoryEntry(
+                savedAsset,
+                oldStatus,
+                capitalize(DELETED_STATUS),
+                DELETE_SOURCE,
+                buildDeletionHistoryDetails(savedDeletionLog)
+        ));
+
+        return BasicMessageResponse.builder()
+                .message("Asset deleted successfully.")
+                .build();
+    }
+
+    @Override
+    @Transactional
+    public BasicMessageResponse restoreAsset(AssetRestoreDto assetRestoreDto) {
+        Asset asset = assetRepository.findById(assetRestoreDto.getAssetId())
+                .orElseThrow(() -> new IllegalArgumentException("Selected asset does not exist."));
+
+        if (!DELETED_STATUS.equals(normalize(asset.getStatus()))) {
+            throw new IllegalArgumentException("Selected asset is not deleted.");
+        }
+
+        AssetDeletionLog deletionLog = assetDeletionLogRepository
+                .findFirstByAsset_IdAndRestoredAtIsNullOrderByDeletionDateDesc(asset.getId())
+                .orElseThrow(() -> new IllegalArgumentException("No active deletion log exists for this asset."));
+
+        asset.setStatus(AVAILABLE_STATUS);
+        asset.setAssignedTo(null);
+        asset.setSection(null);
+        asset.setSeatNumber(null);
+        asset.setDateOfIssue(null);
+        asset.setExpiryDate(null);
+        asset.setExpiryReason(null);
+        asset.setDamageDate(null);
+        asset.setDamageDescription(null);
+        asset.setDamageSeverity(null);
+
+        deletionLog.setRestoredAt(java.time.LocalDateTime.now());
+        deletionLog.setRestoredBy(DEFAULT_ACTION_USER);
+
+        Asset savedAsset = assetRepository.save(asset);
+        assetDeletionLogRepository.save(deletionLog);
+        assetStatusHistoryRepository.save(createHistoryEntry(
+                savedAsset,
+                capitalize(DELETED_STATUS),
+                capitalize(AVAILABLE_STATUS),
+                RESTORE_SOURCE,
+                buildRestoreHistoryDetails(savedAsset)
+        ));
+
+        return BasicMessageResponse.builder()
+                .message("Asset restored successfully.")
+                .build();
+    }
+
+    @Override
     public AssetSummaryDto getAssetSummary() {
         return AssetSummaryDto.builder()
-                .totalAssets(assetRepository.count())
+                .totalAssets(assetRepository.countByStatusNotIgnoreCase(DELETED_STATUS))
                 .availableAssets(assetRepository.countByStatusIgnoreCase(AVAILABLE_STATUS))
                 .assignedAssets(assetRepository.countByStatusIgnoreCase(ASSIGNED_STATUS))
                 .damagedAssets(assetRepository.countByStatusIgnoreCase(DAMAGED_STATUS))
@@ -711,6 +820,17 @@ public class AssetServiceImpl implements AssetService {
 
         builder.append(".");
         return builder.toString();
+    }
+
+    private String buildDeletionHistoryDetails(AssetDeletionLog deletionLog) {
+        String reason = normalizeOptional(deletionLog.getReason());
+        return reason == null
+                ? "Deleted by %s.".formatted(deletionLog.getDeletedBy())
+                : "Deleted by %s. Reason: %s".formatted(deletionLog.getDeletedBy(), reason);
+    }
+
+    private String buildRestoreHistoryDetails(Asset asset) {
+        return "Restored and returned to Available status for %s.".formatted(asset.getAssetName());
     }
 
     private boolean requiresSeatNumber(String categoryName) {

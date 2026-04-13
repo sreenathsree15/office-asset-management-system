@@ -368,7 +368,7 @@ function getCategoryToneClass(categoryName) {
   return "dashboard-category-icon-slate";
 }
 
-export default function DashboardOverview({ user, setPageError }) {
+export default function DashboardOverview({ user, setPageError, refreshKey = 0 }) {
   const [summaryReport, setSummaryReport] = useState(null);
   const [detailedRows, setDetailedRows] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -425,7 +425,7 @@ export default function DashboardOverview({ user, setPageError }) {
     return () => {
       isMounted = false;
     };
-  }, [user?.token, user?.tokenType, setPageError]);
+  }, [refreshKey, user?.token, user?.tokenType, setPageError]);
 
   const statusItems = useMemo(
     () => (Array.isArray(summaryReport?.statusBreakdown) ? summaryReport.statusBreakdown : []).map((item) => ({

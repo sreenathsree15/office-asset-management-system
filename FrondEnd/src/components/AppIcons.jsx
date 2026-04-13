@@ -144,6 +144,18 @@ export function RefreshCwIcon(props) {
   );
 }
 
+export function TrashIcon(props) {
+  return (
+    <SvgIcon {...props}>
+      <path d="M4 7H20" />
+      <path d="M9 7V5A1.5 1.5 0 0 1 10.5 3.5H13.5A1.5 1.5 0 0 1 15 5V7" />
+      <path d="M6 7L7 19A2 2 0 0 0 9 21H15A2 2 0 0 0 17 19L18 7" />
+      <path d="M10 11V17" />
+      <path d="M14 11V17" />
+    </SvgIcon>
+  );
+}
+
 export function CheckCircleIcon(props) {
   return (
     <SvgIcon {...props}>

@@ -5,10 +5,13 @@ import com.office.assetmanagement.asset.dto.ActiveAssetDto;
 import com.office.assetmanagement.asset.dto.AssetAssignDto;
 import com.office.assetmanagement.asset.dto.AssetDamageDto;
 import com.office.assetmanagement.asset.dto.AssetExpireDto;
+import com.office.assetmanagement.asset.dto.AssetDeleteDto;
 import com.office.assetmanagement.asset.dto.AssetReassignDto;
 import com.office.assetmanagement.asset.dto.AssetReturnDto;
+import com.office.assetmanagement.asset.dto.AssetRestoreDto;
 import com.office.assetmanagement.asset.dto.AssetSummaryDto;
 import com.office.assetmanagement.asset.dto.AvailableAssetDto;
+import com.office.assetmanagement.asset.dto.DeletableAssetDto;
 import com.office.assetmanagement.asset.dto.EditableAssetDto;
 import com.office.assetmanagement.asset.dto.AssignedAssetDto;
 import com.office.assetmanagement.asset.dto.AssetSingleDto;
@@ -32,6 +35,8 @@ public interface AssetService {
 
     List<AssignedAssetDto> listAssignedAssets();
 
+    List<DeletableAssetDto> listDeletableAssets();
+
     Asset updateAsset(Long assetId, AssetUpdateDto assetUpdateDto);
 
     SerialNumberAvailabilityDto checkSerialNumberAvailability(String serialNumber, Long excludeAssetId);
@@ -45,6 +50,10 @@ public interface AssetService {
     BasicMessageResponse expireAsset(AssetExpireDto assetExpireDto);
 
     BasicMessageResponse returnAsset(AssetReturnDto assetReturnDto);
+
+    BasicMessageResponse deleteAsset(AssetDeleteDto assetDeleteDto);
+
+    BasicMessageResponse restoreAsset(AssetRestoreDto assetRestoreDto);
 
     AssetSummaryDto getAssetSummary();
 }

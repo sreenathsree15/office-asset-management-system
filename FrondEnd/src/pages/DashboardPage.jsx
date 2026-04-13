@@ -15,6 +15,7 @@ import {
   RefreshCwIcon,
   RotateCcwIcon,
   ShieldCheckIcon,
+  TrashIcon,
   UserCogIcon,
   UserPlusIcon
 } from "../components/AppIcons";
@@ -44,6 +45,12 @@ const ACTION_CARDS = [
     icon: EditIcon,
     title: "Edit Asset",
     description: "Update asset details, status, and serial information."
+  },
+  {
+    key: "delete-asset",
+    icon: TrashIcon,
+    title: "Delete Asset",
+    description: "Soft-delete an asset and move it to deleted assets history."
   },
   {
     key: "return-asset",
@@ -173,6 +180,11 @@ const createEmptyReassignAssetForm = () => ({
   seatNumber: "",
   dateOfIssue: getTodayDateString(),
   remarks: ""
+});
+
+const createEmptyDeleteAssetForm = () => ({
+  assetId: "",
+  reason: ""
 });
 
 const createEmptyExpiredAssetForm = () => ({
@@ -336,11 +348,14 @@ export default function DashboardPage() {
   const [isLoadingSeatNumbers, setIsLoadingSeatNumbers] = useState(true);
   const [isLoadingAvailableAssets, setIsLoadingAvailableAssets] = useState(false);
   const [isLoadingAssignedAssets, setIsLoadingAssignedAssets] = useState(false);
+  const [isLoadingDeletableAssets, setIsLoadingDeletableAssets] = useState(false);
   const [isSavingAsset, setIsSavingAsset] = useState(false);
   const [isSavingBulkAssets, setIsSavingBulkAssets] = useState(false);
   const [isSavingEditAsset, setIsSavingEditAsset] = useState(false);
   const [isSavingAssignAsset, setIsSavingAssignAsset] = useState(false);
   const [isSavingReassignAsset, setIsSavingReassignAsset] = useState(false);
+  const [isDeletingAsset, setIsDeletingAsset] = useState(false);
+  const [isRestoringAsset, setIsRestoringAsset] = useState(false);
   const [isSavingDamagedAsset, setIsSavingDamagedAsset] = useState(false);
   const [isSavingExpiredAsset, setIsSavingExpiredAsset] = useState(false);
   const [isSavingReturnAsset, setIsSavingReturnAsset] = useState(false);
@@ -354,6 +369,7 @@ export default function DashboardPage() {
   const [editAssetForm, setEditAssetForm] = useState(createEmptyEditAssetForm);
   const [assignAssetForm, setAssignAssetForm] = useState(createEmptyAssignAssetForm);
   const [reassignAssetForm, setReassignAssetForm] = useState(createEmptyReassignAssetForm);
+  const [deleteAssetForm, setDeleteAssetForm] = useState(createEmptyDeleteAssetForm);
   const [returnAssetForm, setReturnAssetForm] = useState(createEmptyReturnAssetForm);
   const [damagedAssetForm, setDamagedAssetForm] = useState(createEmptyDamagedAssetForm);
   const [expiredAssetForm, setExpiredAssetForm] = useState(createEmptyExpiredAssetForm);
@@ -366,7 +382,9 @@ export default function DashboardPage() {
   const [activeAssets, setActiveAssets] = useState([]);
   const [availableAssets, setAvailableAssets] = useState([]);
   const [assignedAssets, setAssignedAssets] = useState([]);
+  const [deletableAssets, setDeletableAssets] = useState([]);
   const [seatNumbers, setSeatNumbers] = useState([]);
+  const [reportRefreshKey, setReportRefreshKey] = useState(0);
   const [serialAvailability, setSerialAvailability] = useState({
     isChecking: false,
     available: true,
@@ -382,6 +400,7 @@ export default function DashboardPage() {
     activeModal?.key === "edit-asset" ||
     activeModal?.key === "assign-asset" ||
     activeModal?.key === "reassign-asset" ||
+    activeModal?.key === "delete-asset" ||
     activeModal?.key === "mark-damaged" ||
     activeModal?.key === "mark-expired" ||
     activeModal?.key === "return-asset" ||
@@ -410,6 +429,9 @@ export default function DashboardPage() {
   );
   const selectedReassignAsset = assignedAssets.find(
     (asset) => String(asset.assetId) === String(reassignAssetForm.assetId)
+  );
+  const selectedDeleteAsset = deletableAssets.find(
+    (asset) => String(asset.assetId) === String(deleteAssetForm.assetId)
   );
   const selectedReassignSection = sections.find(
     (section) => normalizeText(section.sectionName) === normalizeText(reassignAssetForm.section)
@@ -508,6 +530,11 @@ export default function DashboardPage() {
     await Promise.all([fetchAssetSummary(), fetchWarrantyAlerts()]);
   };
 
+  const handleAssetDataChanged = async () => {
+    await refreshAssetInsights();
+    setReportRefreshKey((current) => current + 1);
+  };
+
   const fetchEditableAssets = async () => {
     const response = await fetch(`${API_BASE_URL}/api/assets/editable`, {
       method: "GET",
@@ -540,6 +567,16 @@ export default function DashboardPage() {
 
   const fetchAssignedAssets = async () => {
     const response = await fetch(`${API_BASE_URL}/api/assets/assigned`, {
+      method: "GET",
+      headers: authHeaders
+    });
+
+    const payload = await parseResponse(response);
+    return Array.isArray(payload) ? payload : [];
+  };
+
+  const fetchDeletableAssets = async () => {
+    const response = await fetch(`${API_BASE_URL}/api/assets/deletable`, {
       method: "GET",
       headers: authHeaders
     });
@@ -793,6 +830,11 @@ export default function DashboardPage() {
   }, [user?.token, user?.tokenType]);
 
   const openModal = async (card) => {
+    if (card.key === "delete-asset") {
+      await openDeleteAssetModal();
+      return;
+    }
+
     setModalError("");
     setActiveModal(card);
 
@@ -915,13 +957,63 @@ export default function DashboardPage() {
     }
   };
 
+  const openDeleteAssetModal = async (asset = null) => {
+    setModalError("");
+    setDeleteAssetForm({
+      assetId: asset?.assetId ? String(asset.assetId) : "",
+      reason: ""
+    });
+    setDeletableAssets([]);
+    setActiveModal({
+      key: "delete-asset",
+      title: "Delete Asset",
+      item: asset
+    });
+    setIsLoadingDeletableAssets(true);
+
+    try {
+      const payload = await fetchDeletableAssets();
+      setDeletableAssets(payload);
+
+      if (asset?.assetId) {
+        const matchingAsset = payload.find(
+          (item) => String(item.assetId) === String(asset.assetId)
+        );
+
+        if (matchingAsset) {
+          setDeleteAssetForm((current) => ({
+            ...current,
+            assetId: String(matchingAsset.assetId)
+          }));
+        }
+      }
+    } catch (error) {
+      setModalError(error.message);
+    } finally {
+      setIsLoadingDeletableAssets(false);
+    }
+  };
+
+  const openRestoreAssetModal = (asset) => {
+    setModalError("");
+    setActiveModal({
+      key: "restore-asset",
+      title: "Restore Asset",
+      item: asset
+    });
+  };
+
   const closeModal = () => {
     setActiveModal(null);
     setModalError("");
+    setIsLoadingDeletableAssets(false);
     setIsSavingAsset(false);
     setIsSavingBulkAssets(false);
     setIsSavingEditAsset(false);
     setIsSavingAssignAsset(false);
+    setIsSavingReassignAsset(false);
+    setIsDeletingAsset(false);
+    setIsRestoringAsset(false);
     setIsSavingDamagedAsset(false);
     setIsSavingExpiredAsset(false);
     setIsSavingReturnAsset(false);
@@ -930,12 +1022,14 @@ export default function DashboardPage() {
     setIsSavingAdminName(false);
     setIsSavingAdminPassword(false);
     setEditAssetForm(createEmptyEditAssetForm());
+    setDeleteAssetForm(createEmptyDeleteAssetForm());
     setSectionForm(createEmptySectionForm());
     setSeatNumberForm(createEmptySeatNumberForm());
     setAdminNameForm(createAdminNameForm(user?.username ?? ""));
     setAdminPasswordForm(createEmptyAdminPasswordForm());
     setAdminProfileTab("name");
     setEditStatusConfirmed(false);
+    setDeletableAssets([]);
     setSerialAvailability({
       isChecking: false,
       available: true,
@@ -1104,6 +1198,11 @@ export default function DashboardPage() {
     setReassignAssetForm((current) => ({ ...current, [name]: value }));
   };
 
+  const handleDeleteAssetFormChange = (event) => {
+    const { name, value } = event.target;
+    setDeleteAssetForm((current) => ({ ...current, [name]: value }));
+  };
+
   const handleReturnAssetFormChange = (event) => {
     const { name, value } = event.target;
 
@@ -1214,7 +1313,7 @@ export default function DashboardPage() {
       });
 
       const payload = await parseResponse(response);
-      await refreshAssetInsights();
+      await handleAssetDataChanged();
       closeModal();
       setPageNotice(`Asset "${payload.assetName}" added successfully.`);
       setAssetForm(createEmptyAssetForm());
@@ -1254,7 +1353,7 @@ export default function DashboardPage() {
       const payload = await parseResponse(response);
       const assetCount = Array.isArray(payload) ? payload.length : Number(bulkAssetForm.quantity);
 
-      await refreshAssetInsights();
+      await handleAssetDataChanged();
       closeModal();
       setPageNotice(`${assetCount} assets added successfully. Serial numbers were generated automatically.`);
       setBulkAssetForm(createEmptyBulkAssetForm());
@@ -1290,7 +1389,7 @@ export default function DashboardPage() {
       });
 
       const payload = await parseResponse(response);
-      await refreshAssetInsights();
+      await handleAssetDataChanged();
       closeModal();
       setPageNotice(payload.message ?? "Asset assigned successfully.");
       setAssignAssetForm(createEmptyAssignAssetForm());
@@ -1328,7 +1427,7 @@ export default function DashboardPage() {
       });
 
       const payload = await parseResponse(response);
-      await refreshAssetInsights();
+      await handleAssetDataChanged();
       closeModal();
       setPageNotice(payload.message ?? "Asset reassigned successfully.");
       setReassignAssetForm(createEmptyReassignAssetForm());
@@ -1384,7 +1483,7 @@ export default function DashboardPage() {
       });
 
       const payload = await parseResponse(response);
-      await refreshAssetInsights();
+      await handleAssetDataChanged();
       closeModal();
       setPageNotice(`Asset "${payload.assetName}" updated successfully.`);
     } catch (error) {
@@ -1418,7 +1517,7 @@ export default function DashboardPage() {
       });
 
       const payload = await parseResponse(response);
-      await refreshAssetInsights();
+      await handleAssetDataChanged();
       closeModal();
       setPageNotice(payload.message ?? "Asset marked as damaged successfully.");
       setDamagedAssetForm(createEmptyDamagedAssetForm());
@@ -1452,7 +1551,7 @@ export default function DashboardPage() {
       });
 
       const payload = await parseResponse(response);
-      await refreshAssetInsights();
+      await handleAssetDataChanged();
       closeModal();
       setPageNotice(payload.message ?? "Asset returned successfully.");
       setReturnAssetForm(createEmptyReturnAssetForm());
@@ -1486,7 +1585,7 @@ export default function DashboardPage() {
       });
 
       const payload = await parseResponse(response);
-      await refreshAssetInsights();
+      await handleAssetDataChanged();
       closeModal();
       setPageNotice(payload.message ?? "Asset marked as expired successfully.");
       setExpiredAssetForm(createEmptyExpiredAssetForm());
@@ -1494,6 +1593,71 @@ export default function DashboardPage() {
       setModalError(error.message);
     } finally {
       setIsSavingExpiredAsset(false);
+    }
+  };
+
+  const handleDeleteAsset = async (event) => {
+    event.preventDefault();
+    setPageError("");
+    setPageNotice("");
+    setModalError("");
+    setIsDeletingAsset(true);
+
+    const assetLabel = selectedDeleteAsset?.assetName ?? activeModal?.item?.assetName ?? "Asset";
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/assets/delete`, {
+        method: "POST",
+        headers: {
+          ...authHeaders,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          assetId: Number(deleteAssetForm.assetId),
+          reason: deleteAssetForm.reason
+        })
+      });
+
+      const payload = await parseResponse(response);
+      await handleAssetDataChanged();
+      closeModal();
+      setPageNotice(payload.message ?? `Asset "${assetLabel}" deleted successfully.`);
+      setDeleteAssetForm(createEmptyDeleteAssetForm());
+    } catch (error) {
+      setModalError(error.message);
+    } finally {
+      setIsDeletingAsset(false);
+    }
+  };
+
+  const handleRestoreAsset = async () => {
+    setPageError("");
+    setPageNotice("");
+    setModalError("");
+    setIsRestoringAsset(true);
+
+    const assetLabel = activeModal?.item?.assetName ?? "Asset";
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/assets/restore`, {
+        method: "POST",
+        headers: {
+          ...authHeaders,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          assetId: Number(activeModal?.item?.assetId)
+        })
+      });
+
+      const payload = await parseResponse(response);
+      await handleAssetDataChanged();
+      closeModal();
+      setPageNotice(payload.message ?? `Asset "${assetLabel}" restored successfully.`);
+    } catch (error) {
+      setModalError(error.message);
+    } finally {
+      setIsRestoringAsset(false);
     }
   };
 
@@ -1749,6 +1913,7 @@ export default function DashboardPage() {
 
   const renderDashboardPanel = () => (
     <DashboardOverview
+      refreshKey={reportRefreshKey}
       setPageError={setPageError}
       setPageNotice={setPageNotice}
       user={user}
@@ -1794,6 +1959,8 @@ export default function DashboardPage() {
             className={
               card.key === "mark-expired" && (warrantyOverdueCount > 0 || warrantyDueSoonCount > 0)
                 ? "asset-action-card asset-action-card-alert"
+                : card.key === "delete-asset"
+                  ? "asset-action-card asset-action-card-danger"
                 : "asset-action-card"
             }
             type="button"
@@ -2028,6 +2195,9 @@ export default function DashboardPage() {
                 ? (
                   <ReportsPanel
                     categories={categories}
+                    onRequestDeleteAsset={openDeleteAssetModal}
+                    onRequestRestoreAsset={openRestoreAssetModal}
+                    refreshKey={reportRefreshKey}
                     setPageError={setPageError}
                     setPageNotice={setPageNotice}
                     user={user}
@@ -2942,6 +3112,12 @@ export default function DashboardPage() {
                       </label>
                     </div>
 
+                    {!selectedReassignAsset && !isLoadingAssignedAssets && assignedAssets.length > 0 ? (
+                      <p className="asset-form-note">
+                        After selecting an asset, the reassign fields will load. Seat Number is required only for Desktop, Printer, and UPS assets.
+                      </p>
+                    ) : null}
+
                     {selectedReassignAsset ? (
                       <div className="asset-form-grid">
                         <label className="field">
@@ -2963,6 +3139,18 @@ export default function DashboardPage() {
                             value={reassignAssetForm.currentAssignedTo || reassignAssetForm.currentSection || "-"}
                           />
                         </label>
+
+                        {reassignAssetRequiresSeatNumber ? (
+                          <label className="field asset-field-full">
+                            <span>Current Seat Number</span>
+                            <input
+                              className="readonly-field"
+                              readOnly
+                              type="text"
+                              value={reassignAssetForm.currentSeatNumber || "-"}
+                            />
+                          </label>
+                        ) : null}
 
                         <label className="field asset-field-full">
                           <span>New Date of Issue</span>
@@ -3034,10 +3222,6 @@ export default function DashboardPage() {
                           </label>
                         ) : null}
                       </div>
-                    ) : !isLoadingAssignedAssets && assignedAssets.length > 0 ? (
-                      <p className="asset-empty-state">
-                        Select an assigned asset first to load the reassign form.
-                      </p>
                     ) : null}
 
                     {!isLoadingAssignedAssets && assignedAssets.length === 0 ? (
@@ -3380,6 +3564,145 @@ export default function DashboardPage() {
                     </button>
                   </div>
                 </form>
+              </>
+            ) : activeModal.key === "delete-asset" ? (
+              <>
+                <div className="asset-modal-header">
+                  <div>
+                    <p className="auth-modal-caption">Asset Management</p>
+                    <h3>Delete Asset</h3>
+                  </div>
+
+                  <button
+                    aria-label="Close delete asset dialog"
+                    className="modal-close-button"
+                    type="button"
+                    onClick={closeModal}
+                  >
+                    X
+                  </button>
+                </div>
+
+                <form className="asset-form" onSubmit={handleDeleteAsset}>
+                  <div className="asset-modal-scroll">
+                    <div className="asset-form-grid">
+                      <label className="field asset-field-full">
+                        <span>Select Asset</span>
+                        <select
+                          name="assetId"
+                          onChange={handleDeleteAssetFormChange}
+                          value={deleteAssetForm.assetId}
+                        >
+                          <option value="">
+                            {isLoadingDeletableAssets
+                              ? "Loading assets..."
+                              : deletableAssets.length === 0
+                                ? "No assets available"
+                                : "Select asset"}
+                          </option>
+                          {deletableAssets.map((asset) => (
+                            <option key={asset.assetId} value={asset.assetId}>
+                              {asset.assetDisplayId} - {asset.assetName}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+
+                      {selectedDeleteAsset ? (
+                        <label className="field asset-field-full">
+                          <span>Current Status</span>
+                          <input
+                            className="readonly-field"
+                            readOnly
+                            type="text"
+                            value={selectedDeleteAsset.status}
+                          />
+                        </label>
+                      ) : null}
+
+                      <label className="field asset-field-full">
+                        <span>Reason for deletion (Optional)</span>
+                        <textarea
+                          name="reason"
+                          onChange={handleDeleteAssetFormChange}
+                          placeholder="Enter reason for deletion"
+                          rows="5"
+                          value={deleteAssetForm.reason}
+                        />
+                      </label>
+                    </div>
+
+                    <p className="asset-inline-warning">
+                      Asset will be soft-deleted and hidden from active lists. It can be restored
+                      from Deleted Assets History.
+                    </p>
+
+                    {!isLoadingDeletableAssets && deletableAssets.length === 0 ? (
+                      <p className="asset-empty-state">
+                        No active assets are available to delete right now.
+                      </p>
+                    ) : null}
+
+                    {modalError ? <p className="message error-message">{modalError}</p> : null}
+                  </div>
+
+                  <div className="asset-modal-footer">
+                    <button className="secondary-button" type="button" onClick={closeModal}>
+                      Cancel
+                    </button>
+                    <button
+                      className="danger-button"
+                      disabled={
+                        isDeletingAsset ||
+                        isLoadingDeletableAssets ||
+                        deletableAssets.length === 0 ||
+                        !deleteAssetForm.assetId
+                      }
+                      type="submit"
+                    >
+                      {isDeletingAsset ? "Deleting..." : "Confirm Delete"}
+                    </button>
+                  </div>
+                </form>
+              </>
+            ) : activeModal.key === "restore-asset" ? (
+              <>
+                <div className="asset-modal-header">
+                  <div>
+                    <p className="auth-modal-caption">Reports</p>
+                    <h3>Restore Asset</h3>
+                  </div>
+
+                  <button
+                    aria-label="Close restore asset dialog"
+                    className="modal-close-button"
+                    type="button"
+                    onClick={closeModal}
+                  >
+                    X
+                  </button>
+                </div>
+
+                <div className="asset-modal-scroll">
+                  <p className="asset-inline-success">
+                    Restore "{activeModal.item?.assetName}"? It will become Available again.
+                  </p>
+                  {modalError ? <p className="message error-message">{modalError}</p> : null}
+                </div>
+
+                <div className="asset-modal-footer">
+                  <button className="secondary-button" type="button" onClick={closeModal}>
+                    Cancel
+                  </button>
+                  <button
+                    className="primary-button"
+                    disabled={isRestoringAsset}
+                    type="button"
+                    onClick={handleRestoreAsset}
+                  >
+                    {isRestoringAsset ? "Restoring..." : "Restore"}
+                  </button>
+                </div>
               </>
             ) : activeModal.key === "add-section" ? (
               <>

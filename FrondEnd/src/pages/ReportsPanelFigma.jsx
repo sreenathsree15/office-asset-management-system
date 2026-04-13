@@ -7,6 +7,7 @@ import {
   HistoryIcon,
   PieChartIcon,
   SearchIcon,
+  TrashIcon,
   XIcon
 } from "../components/AppIcons";
 
@@ -30,6 +31,12 @@ const REPORT_CARDS = [
     icon: PieChartIcon,
     title: "Summary Report",
     description: "Visual overview with charts and statistics"
+  },
+  {
+    key: "deleted-history",
+    icon: TrashIcon,
+    title: "Deleted Assets History",
+    description: "Review soft-deleted assets and restore them when needed"
   }
 ];
 
@@ -42,7 +49,9 @@ const HISTORY_ACTION_OPTIONS = [
   "Returned",
   "Damaged",
   "Expired",
-  "Edited"
+  "Edited",
+  "Deleted",
+  "Restored"
 ];
 
 const INITIAL_DETAILED_FILTERS = {
@@ -62,6 +71,12 @@ const INITIAL_HISTORY_FILTERS = {
   size: 6
 };
 
+const INITIAL_DELETED_FILTERS = {
+  search: "",
+  page: 0,
+  size: 6
+};
+
 const STATUS_COLOR_MAP = {
   available: "#10b981",
   assigned: "#8b5cf6",
@@ -76,6 +91,8 @@ const ACTION_LABEL_MAP = {
   returned: "Returned",
   "marked damaged": "Damaged",
   "marked expired": "Expired",
+  deleted: "Deleted",
+  restored: "Restored",
   edited: "Edited"
 };
 
@@ -165,11 +182,13 @@ function actionClassName(action) {
 
   return normalized === "added"
     ? "report-action-pill report-action-added"
+    : normalized === "restored"
+      ? "report-action-pill report-action-added"
     : normalized === "assigned" || normalized === "reassigned"
       ? "report-action-pill report-action-assigned"
       : normalized === "returned"
         ? "report-action-pill report-action-returned"
-        : normalized === "damaged" || normalized === "expired"
+        : normalized === "damaged" || normalized === "expired" || normalized === "deleted"
           ? "report-action-pill report-action-alert"
           : "report-action-pill report-action-neutral";
 }
@@ -421,10 +440,19 @@ function BreakdownCard({ title, items, total, accent = "default" }) {
   );
 }
 
-export default function ReportsPanelFigma({ user, categories, setPageError, setPageNotice }) {
+export default function ReportsPanelFigma({
+  user,
+  categories,
+  setPageError,
+  setPageNotice,
+  onRequestDeleteAsset,
+  onRequestRestoreAsset,
+  refreshKey = 0
+}) {
   const [activeView, setActiveView] = useState("home");
   const [detailedFilters, setDetailedFilters] = useState(INITIAL_DETAILED_FILTERS);
   const [historyFilters, setHistoryFilters] = useState(INITIAL_HISTORY_FILTERS);
+  const [deletedFilters, setDeletedFilters] = useState(INITIAL_DELETED_FILTERS);
   const [detailedReport, setDetailedReport] = useState({
     items: [],
     page: 0,
@@ -439,12 +467,21 @@ export default function ReportsPanelFigma({ user, categories, setPageError, setP
     totalElements: 0,
     totalPages: 1
   });
+  const [deletedReport, setDeletedReport] = useState({
+    items: [],
+    page: 0,
+    size: 6,
+    totalElements: 0,
+    totalPages: 1
+  });
   const [summaryReport, setSummaryReport] = useState(null);
   const [isLoadingDetailed, setIsLoadingDetailed] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [isLoadingDeleted, setIsLoadingDeleted] = useState(false);
   const [isLoadingSummary, setIsLoadingSummary] = useState(false);
   const [isExportingDetailed, setIsExportingDetailed] = useState(false);
   const [isExportingHistory, setIsExportingHistory] = useState(false);
+  const [isExportingDeleted, setIsExportingDeleted] = useState(false);
   const [isExportingSummary, setIsExportingSummary] = useState(false);
 
   const authHeaders = {
@@ -491,6 +528,21 @@ export default function ReportsPanelFigma({ user, categories, setPageError, setP
     return parseResponse(response);
   };
 
+  const fetchDeletedReport = async (filters) => {
+    const params = new URLSearchParams({
+      search: filters.search,
+      page: String(filters.page),
+      size: String(filters.size)
+    });
+
+    const response = await fetch(`${API_BASE_URL}/api/reports/deleted-assets?${params}`, {
+      method: "GET",
+      headers: authHeaders
+    });
+
+    return parseResponse(response);
+  };
+
   const fetchSummaryReport = async () => {
     const response = await fetch(`${API_BASE_URL}/api/reports/summary`, {
       method: "GET",
@@ -521,7 +573,7 @@ export default function ReportsPanelFigma({ user, categories, setPageError, setP
     return () => {
       window.clearTimeout(timer);
     };
-  }, [activeView, detailedFilters, user?.token, user?.tokenType, setPageError]);
+  }, [activeView, detailedFilters, refreshKey, user?.token, user?.tokenType, setPageError]);
 
   useEffect(() => {
     if (activeView !== "history") {
@@ -544,7 +596,30 @@ export default function ReportsPanelFigma({ user, categories, setPageError, setP
     return () => {
       window.clearTimeout(timer);
     };
-  }, [activeView, historyFilters, user?.token, user?.tokenType, setPageError]);
+  }, [activeView, historyFilters, refreshKey, user?.token, user?.tokenType, setPageError]);
+
+  useEffect(() => {
+    if (activeView !== "deleted-history") {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(async () => {
+      setIsLoadingDeleted(true);
+
+      try {
+        const payload = await fetchDeletedReport(deletedFilters);
+        setDeletedReport(payload);
+      } catch (error) {
+        setPageError(error.message);
+      } finally {
+        setIsLoadingDeleted(false);
+      }
+    }, 250);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [activeView, deletedFilters, refreshKey, user?.token, user?.tokenType, setPageError]);
 
   useEffect(() => {
     if (activeView !== "summary") {
@@ -566,7 +641,7 @@ export default function ReportsPanelFigma({ user, categories, setPageError, setP
 
     loadSummary();
     return undefined;
-  }, [activeView, user?.token, user?.tokenType, setPageError]);
+  }, [activeView, refreshKey, user?.token, user?.tokenType, setPageError]);
 
   const handleOpenView = (nextView) => {
     clearMessages();
@@ -591,6 +666,15 @@ export default function ReportsPanelFigma({ user, categories, setPageError, setP
     }));
   };
 
+  const handleDeletedFilterChange = (event) => {
+    const { name, value } = event.target;
+    setDeletedFilters((current) => ({
+      ...current,
+      [name]: value,
+      page: 0
+    }));
+  };
+
   const handleDetailedSort = (sortBy) => {
     setDetailedFilters((current) => ({
       ...current,
@@ -608,6 +692,10 @@ export default function ReportsPanelFigma({ user, categories, setPageError, setP
     setHistoryFilters(INITIAL_HISTORY_FILTERS);
   };
 
+  const resetDeletedFilters = () => {
+    setDeletedFilters(INITIAL_DELETED_FILTERS);
+  };
+
   const fetchAllDetailedRows = async () => {
     const payload = await fetchDetailedReport({
       ...detailedFilters,
@@ -623,6 +711,16 @@ export default function ReportsPanelFigma({ user, categories, setPageError, setP
       ...historyFilters,
       page: 0,
       size: Math.max(historyReport.totalElements || 0, 500)
+    });
+
+    return Array.isArray(payload?.items) ? payload.items : [];
+  };
+
+  const fetchAllDeletedRows = async () => {
+    const payload = await fetchDeletedReport({
+      ...deletedFilters,
+      page: 0,
+      size: Math.max(deletedReport.totalElements || 0, 500)
     });
 
     return Array.isArray(payload?.items) ? payload.items : [];
@@ -842,6 +940,97 @@ export default function ReportsPanelFigma({ user, categories, setPageError, setP
     }
   };
 
+  const handleExportDeletedExcel = async () => {
+    clearMessages();
+    setIsExportingDeleted(true);
+
+    try {
+      const items = await fetchAllDeletedRows();
+      const rows = [
+        ["Deletion Date", "Asset ID", "Asset Name", "Reason", "Deleted By"],
+        ...items.map((item) => ([
+          formatDateTime(item.deletionDate),
+          item.assetDisplayId,
+          item.assetName,
+          item.reason || "-",
+          item.deletedBy || "-"
+        ]))
+      ];
+
+      const csv = rows.map((row) => row.map(buildCsvCell).join(",")).join("\n");
+      downloadBlob(csv, "deleted-assets-history.csv", "text/csv;charset=utf-8;");
+      setPageNotice("Deleted assets history exported for Excel.");
+    } catch (error) {
+      setPageError(error.message);
+    } finally {
+      setIsExportingDeleted(false);
+    }
+  };
+
+  const handleExportDeletedPdf = async () => {
+    clearMessages();
+    setIsExportingDeleted(true);
+
+    try {
+      const items = await fetchAllDeletedRows();
+      const printableWindow = window.open("", "_blank", "width=1280,height=900");
+
+      if (!printableWindow) {
+        throw new Error("Popup blocked. Allow popups to export the report as PDF.");
+      }
+
+      const tableRows = items.map((item) => `
+        <tr>
+          <td>${escapeHtml(formatDateTime(item.deletionDate))}</td>
+          <td>${escapeHtml(item.assetDisplayId)}</td>
+          <td>${escapeHtml(item.assetName)}</td>
+          <td>${escapeHtml(item.reason || "-")}</td>
+          <td>${escapeHtml(item.deletedBy || "-")}</td>
+        </tr>
+      `).join("");
+
+      printableWindow.document.write(`
+        <html>
+          <head>
+            <title>Deleted Assets History</title>
+            <style>
+              body { font-family: Arial, sans-serif; padding: 24px; color: #111827; }
+              h1 { margin: 0 0 12px; }
+              p { margin: 0 0 18px; color: #4b5563; }
+              table { width: 100%; border-collapse: collapse; }
+              th, td { border: 1px solid #d1d5db; padding: 9px; text-align: left; font-size: 12px; }
+              th { background: #f3f4f6; }
+            </style>
+          </head>
+          <body>
+            <h1>Deleted Assets History</h1>
+            <p>Generated from Office Asset Management System</p>
+            <table>
+              <thead>
+                <tr>
+                  <th>Deletion Date</th>
+                  <th>Asset ID</th>
+                  <th>Asset Name</th>
+                  <th>Reason</th>
+                  <th>Deleted By</th>
+                </tr>
+              </thead>
+              <tbody>${tableRows}</tbody>
+            </table>
+          </body>
+        </html>
+      `);
+      printableWindow.document.close();
+      printableWindow.focus();
+      printableWindow.print();
+      setPageNotice("Deleted assets history opened in print view for PDF export.");
+    } catch (error) {
+      setPageError(error.message);
+    } finally {
+      setIsExportingDeleted(false);
+    }
+  };
+
   const handleExportSummaryExcel = async () => {
     clearMessages();
     setIsExportingSummary(true);
@@ -974,6 +1163,13 @@ export default function ReportsPanelFigma({ user, categories, setPageError, setP
     historyReport.totalElements,
     (historyReport.page + 1) * historyReport.size
   );
+  const deletedStart = deletedReport.totalElements === 0
+    ? 0
+    : deletedReport.page * deletedReport.size + 1;
+  const deletedEnd = Math.min(
+    deletedReport.totalElements,
+    (deletedReport.page + 1) * deletedReport.size
+  );
 
   const historyRows = useMemo(
     () => (historyReport.items ?? []).map((item) => ({
@@ -987,6 +1183,18 @@ export default function ReportsPanelFigma({ user, categories, setPageError, setP
       remarks: item.details || "-"
     })),
     [historyReport.items]
+  );
+  const deletedRows = useMemo(
+    () => (deletedReport.items ?? []).map((item) => ({
+      deletionLogId: item.deletionLogId,
+      assetId: item.assetId,
+      assetDisplayId: item.assetDisplayId,
+      assetName: item.assetName,
+      deletionDate: formatDateTime(item.deletionDate),
+      reason: item.reason || "-",
+      deletedBy: item.deletedBy || "-"
+    })),
+    [deletedReport.items]
   );
 
   const summaryStatusItems = useMemo(() => getStatusMetrics(summaryReport), [summaryReport]);
@@ -1105,16 +1313,17 @@ export default function ReportsPanelFigma({ user, categories, setPageError, setP
                 <th>Employee Name</th>
                 <th>Section</th>
                 <th>Status</th>
+                <th className="report-action-column">Delete</th>
               </tr>
             </thead>
             <tbody>
               {isLoadingDetailed ? (
                 <tr>
-                  <td className="report-empty-cell" colSpan="6">Loading report...</td>
+                  <td className="report-empty-cell" colSpan="7">Loading report...</td>
                 </tr>
               ) : detailedReport.items.length === 0 ? (
                 <tr>
-                  <td className="report-empty-cell" colSpan="6">No assets match the selected filters.</td>
+                  <td className="report-empty-cell" colSpan="7">No assets match the selected filters.</td>
                 </tr>
               ) : (
                 detailedReport.items.map((item) => (
@@ -1125,6 +1334,16 @@ export default function ReportsPanelFigma({ user, categories, setPageError, setP
                     <td>{item.employeeName}</td>
                     <td>{item.section}</td>
                     <td><span className={statusClassName(item.status)}>{item.status}</span></td>
+                    <td>
+                      <button
+                        aria-label={`Delete ${item.assetName}`}
+                        className="report-row-action-button report-row-action-button-danger"
+                        type="button"
+                        onClick={() => onRequestDeleteAsset?.(item)}
+                      >
+                        <TrashIcon className="report-row-action-icon" />
+                      </button>
+                    </td>
                   </tr>
                 ))
               )}
@@ -1241,6 +1460,106 @@ export default function ReportsPanelFigma({ user, categories, setPageError, setP
               Previous
             </button>
             <button className="secondary-button report-page-button" disabled={historyReport.page >= historyReport.totalPages - 1 || isLoadingHistory} type="button" onClick={() => setHistoryFilters((current) => ({ ...current, page: current.page + 1 }))}>
+              Next
+            </button>
+          </div>
+        </div>
+      </section>
+    </>
+  ) : activeView === "deleted-history" ? (
+    <>
+      <header className="asset-page-header">
+        <div>
+          <h1>Reports</h1>
+        </div>
+      </header>
+
+      <button className="secondary-button report-back-button" type="button" onClick={() => setActiveView("home")}>
+        <ArrowLeftIcon className="report-button-icon" />
+        <span>Back to Reports</span>
+      </button>
+
+      <section className="report-toolbar-card">
+        <div className="report-filter-grid report-filter-grid-deleted">
+          <label className="report-search-field">
+            <SearchIcon className="report-search-icon-svg" />
+            <input
+              name="search"
+              onChange={handleDeletedFilterChange}
+              placeholder="Search by Asset ID, Name, Reason, Deleted By"
+              type="text"
+              value={deletedFilters.search}
+            />
+          </label>
+
+          <button className="secondary-button report-filter-button" type="button" onClick={resetDeletedFilters}>
+            <XIcon className="report-button-icon" />
+            <span>Clear</span>
+          </button>
+          <button className="primary-button report-export-button report-export-excel" disabled={isExportingDeleted} type="button" onClick={handleExportDeletedExcel}>
+            <FileSpreadsheetIcon className="report-button-icon" />
+            <span>Excel</span>
+          </button>
+          <button className="primary-button report-export-button report-export-pdf" disabled={isExportingDeleted} type="button" onClick={handleExportDeletedPdf}>
+            <FileTextIcon className="report-button-icon" />
+            <span>PDF</span>
+          </button>
+        </div>
+      </section>
+
+      <section className="report-table-card">
+        <div className="report-table-scroll">
+          <table className="report-table report-table-deleted-history">
+            <thead>
+              <tr>
+                <th>Deletion Date</th>
+                <th>Asset ID</th>
+                <th>Asset Name</th>
+                <th>Reason</th>
+                <th>Deleted By</th>
+                <th className="report-action-column">Restore</th>
+              </tr>
+            </thead>
+            <tbody>
+              {isLoadingDeleted ? (
+                <tr>
+                  <td className="report-empty-cell" colSpan="6">Loading deleted assets...</td>
+                </tr>
+              ) : deletedRows.length === 0 ? (
+                <tr>
+                  <td className="report-empty-cell" colSpan="6">No deleted assets found.</td>
+                </tr>
+              ) : (
+                deletedRows.map((item) => (
+                  <tr key={item.deletionLogId}>
+                    <td>{item.deletionDate}</td>
+                    <td>{item.assetDisplayId}</td>
+                    <td>{item.assetName}</td>
+                    <td>{item.reason}</td>
+                    <td>{item.deletedBy}</td>
+                    <td>
+                      <button
+                        className="report-restore-button"
+                        type="button"
+                        onClick={() => onRequestRestoreAsset?.(item)}
+                      >
+                        Restore
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="report-pagination-row">
+          <span>Showing {deletedStart} to {deletedEnd} of {deletedReport.totalElements} results</span>
+          <div className="report-pagination-actions">
+            <button className="secondary-button report-page-button" disabled={deletedReport.page <= 0 || isLoadingDeleted} type="button" onClick={() => setDeletedFilters((current) => ({ ...current, page: current.page - 1 }))}>
+              Previous
+            </button>
+            <button className="secondary-button report-page-button" disabled={deletedReport.page >= deletedReport.totalPages - 1 || isLoadingDeleted} type="button" onClick={() => setDeletedFilters((current) => ({ ...current, page: current.page + 1 }))}>
               Next
             </button>
           </div>

@@ -13,6 +13,8 @@ public interface AssetRepository extends JpaRepository<Asset, Long> {
 
     java.util.List<Asset> findAllByOrderByUpdatedAtDesc();
 
+    List<Asset> findAllByStatusNotIgnoreCaseOrderByUpdatedAtDesc(String status);
+
     List<Asset> findAllByStatusIgnoreCaseOrderByUpdatedAtDesc(String status);
 
     List<Asset> findAllByStatusInOrderByUpdatedAtDesc(List<String> statuses);
@@ -22,4 +24,6 @@ public interface AssetRepository extends JpaRepository<Asset, Long> {
     Optional<Asset> findByIdAndStatusIn(Long id, List<String> statuses);
 
     long countByStatusIgnoreCase(String status);
+
+    long countByStatusNotIgnoreCase(String status);
 }

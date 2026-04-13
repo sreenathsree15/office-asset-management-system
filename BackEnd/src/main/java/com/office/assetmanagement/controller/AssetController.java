@@ -4,11 +4,14 @@ import com.office.assetmanagement.asset.dto.AssetBulkDto;
 import com.office.assetmanagement.asset.dto.ActiveAssetDto;
 import com.office.assetmanagement.asset.dto.AssetAssignDto;
 import com.office.assetmanagement.asset.dto.AssetDamageDto;
+import com.office.assetmanagement.asset.dto.AssetDeleteDto;
 import com.office.assetmanagement.asset.dto.AssetExpireDto;
 import com.office.assetmanagement.asset.dto.AssetReassignDto;
 import com.office.assetmanagement.asset.dto.AssetReturnDto;
+import com.office.assetmanagement.asset.dto.AssetRestoreDto;
 import com.office.assetmanagement.asset.dto.AssetSummaryDto;
 import com.office.assetmanagement.asset.dto.AvailableAssetDto;
+import com.office.assetmanagement.asset.dto.DeletableAssetDto;
 import com.office.assetmanagement.asset.dto.EditableAssetDto;
 import com.office.assetmanagement.asset.dto.AssignedAssetDto;
 import com.office.assetmanagement.asset.dto.AssetSingleDto;
@@ -70,6 +73,11 @@ public class AssetController {
         return ResponseEntity.ok(assetService.listAssignedAssets());
     }
 
+    @GetMapping("/deletable")
+    public ResponseEntity<List<DeletableAssetDto>> listDeletableAssets() {
+        return ResponseEntity.ok(assetService.listDeletableAssets());
+    }
+
     @PostMapping("/assign")
     public ResponseEntity<BasicMessageResponse> assignAsset(@Valid @RequestBody AssetAssignDto assetAssignDto) {
         return ResponseEntity.ok(assetService.assignAsset(assetAssignDto));
@@ -109,6 +117,16 @@ public class AssetController {
     @PostMapping("/return")
     public ResponseEntity<BasicMessageResponse> returnAsset(@Valid @RequestBody AssetReturnDto assetReturnDto) {
         return ResponseEntity.ok(assetService.returnAsset(assetReturnDto));
+    }
+
+    @PostMapping("/delete")
+    public ResponseEntity<BasicMessageResponse> deleteAsset(@Valid @RequestBody AssetDeleteDto assetDeleteDto) {
+        return ResponseEntity.ok(assetService.deleteAsset(assetDeleteDto));
+    }
+
+    @PostMapping("/restore")
+    public ResponseEntity<BasicMessageResponse> restoreAsset(@Valid @RequestBody AssetRestoreDto assetRestoreDto) {
+        return ResponseEntity.ok(assetService.restoreAsset(assetRestoreDto));
     }
 
     @GetMapping("/summary")

@@ -743,6 +743,20 @@ input::placeholder {
   box-shadow: 0 26px 48px rgba(3, 7, 18, 0.22);
 }
 
+.asset-action-card-danger {
+  border-color: rgba(248, 113, 113, 0.18);
+}
+
+.asset-action-card-danger .asset-action-icon {
+  background: linear-gradient(135deg, #d92d45 0%, #ef4444 100%);
+  box-shadow: 0 18px 36px rgba(239, 68, 68, 0.24);
+}
+
+.asset-action-card-danger:hover {
+  border-color: rgba(248, 113, 113, 0.32);
+  box-shadow: 0 28px 52px rgba(24, 9, 12, 0.28);
+}
+
 .asset-action-card-alert:hover {
   border-color: rgba(255, 214, 102, 0.36);
 }
@@ -936,6 +950,32 @@ input::placeholder {
   padding-top: 0.85rem;
   margin-top: 0;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.danger-button {
+  min-width: 146px;
+  border: none;
+  border-radius: 14px;
+  padding: 0.86rem 1.2rem;
+  background: linear-gradient(135deg, #d92d45 0%, #ef4444 100%);
+  color: #fff;
+  font-weight: 700;
+  box-shadow: 0 14px 28px rgba(217, 45, 69, 0.24);
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    filter 0.2s ease;
+}
+
+.danger-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 18px 34px rgba(217, 45, 69, 0.28);
+}
+
+.danger-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  box-shadow: none;
 }
 
 .asset-placeholder-card {
@@ -1151,6 +1191,10 @@ input::placeholder {
   grid-template-columns: minmax(260px, 1.6fr) minmax(180px, 0.9fr) auto auto auto;
 }
 
+.report-filter-grid-deleted {
+  grid-template-columns: minmax(280px, 1.8fr) auto auto auto;
+}
+
 .report-search-field {
   display: flex;
   align-items: center;
@@ -1292,6 +1336,10 @@ input::placeholder {
   min-width: 1120px;
 }
 
+.report-table-deleted-history {
+  min-width: 900px;
+}
+
 .report-table th,
 .report-table td {
   padding: 0.95rem 0.9rem;
@@ -1322,6 +1370,68 @@ input::placeholder {
 .report-table tbody tr:hover {
   background: rgba(255, 255, 255, 0.05);
   box-shadow: inset 0 0 0 1px rgba(192, 132, 252, 0.08);
+}
+
+.report-action-column {
+  width: 90px;
+}
+
+.report-row-action-button {
+  width: 2.35rem;
+  height: 2.35rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 12px;
+  background: rgba(51, 65, 85, 0.7);
+  color: #e2e8f0;
+  transition:
+    transform 0.2s ease,
+    border-color 0.2s ease,
+    background-color 0.2s ease,
+    color 0.2s ease;
+}
+
+.report-row-action-button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(248, 113, 113, 0.3);
+}
+
+.report-row-action-button-danger {
+  background: rgba(127, 29, 29, 0.28);
+  color: #fecaca;
+}
+
+.report-row-action-button-danger:hover {
+  background: rgba(153, 27, 27, 0.38);
+  color: #fff1f2;
+}
+
+.report-row-action-icon {
+  width: 1rem;
+  height: 1rem;
+}
+
+.report-restore-button {
+  min-width: 88px;
+  border: none;
+  border-radius: 12px;
+  padding: 0.6rem 0.85rem;
+  background: linear-gradient(135deg, #16a34a 0%, #22c55e 100%);
+  color: #ffffff;
+  font-size: 0.84rem;
+  font-weight: 700;
+  box-shadow: 0 10px 20px rgba(34, 197, 94, 0.18);
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    filter 0.2s ease;
+}
+
+.report-restore-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 24px rgba(34, 197, 94, 0.22);
 }
 
 .report-sort-button {
@@ -2332,6 +2442,7 @@ input::placeholder {
 
   .report-filter-grid,
   .report-filter-grid-history,
+  .report-filter-grid-deleted,
   .report-summary-layout,
   .report-actions-grid,
   .report-summary-charts,

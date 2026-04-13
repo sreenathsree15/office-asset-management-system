@@ -1,10 +1,13 @@
 package com.office.assetmanagement.service.impl;
 
 import com.office.assetmanagement.model.Asset;
+import com.office.assetmanagement.model.AssetDeletionLog;
 import com.office.assetmanagement.model.AssetStatusHistory;
+import com.office.assetmanagement.repo.AssetDeletionLogRepository;
 import com.office.assetmanagement.repo.AssetRepository;
 import com.office.assetmanagement.repo.AssetStatusHistoryRepository;
 import com.office.assetmanagement.report.dto.DetailedReportRowDto;
+import com.office.assetmanagement.report.dto.DeletedAssetReportRowDto;
 import com.office.assetmanagement.report.dto.HistoryReportRowDto;
 import com.office.assetmanagement.report.dto.PagedReportResponseDto;
 import com.office.assetmanagement.report.dto.ReportMetricDto;
@@ -25,7 +28,10 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class ReportServiceImpl implements ReportService {
 
+    private static final String DELETED_STATUS = "deleted";
+
     private final AssetRepository assetRepository;
+    private final AssetDeletionLogRepository assetDeletionLogRepository;
     private final AssetStatusHistoryRepository assetStatusHistoryRepository;
 
     @Override
@@ -38,7 +44,7 @@ public class ReportServiceImpl implements ReportService {
             int page,
             int size
     ) {
-        List<DetailedReportRowDto> filteredItems = assetRepository.findAllByOrderByUpdatedAtDesc()
+        List<DetailedReportRowDto> filteredItems = assetRepository.findAllByStatusNotIgnoreCaseOrderByUpdatedAtDesc(DELETED_STATUS)
                 .stream()
                 .map(this::toDetailedRow)
                 .filter(item -> matchesDetailedSearch(item, search))
@@ -68,8 +74,23 @@ public class ReportServiceImpl implements ReportService {
     }
 
     @Override
+    public PagedReportResponseDto<DeletedAssetReportRowDto> getDeletedAssetsReport(
+            String search,
+            int page,
+            int size
+    ) {
+        List<DeletedAssetReportRowDto> filteredItems = assetDeletionLogRepository.findAllByRestoredAtIsNullOrderByDeletionDateDesc()
+                .stream()
+                .map(this::toDeletedAssetRow)
+                .filter(item -> matchesDeletedSearch(item, search))
+                .toList();
+
+        return paginate(filteredItems, page, size);
+    }
+
+    @Override
     public SummaryReportDto getSummaryReport() {
-        List<Asset> assets = assetRepository.findAllByOrderByUpdatedAtDesc();
+        List<Asset> assets = assetRepository.findAllByStatusNotIgnoreCaseOrderByUpdatedAtDesc(DELETED_STATUS);
 
         Map<String, Long> statusCounts = new LinkedHashMap<>();
         statusCounts.put("Available", 0L);
@@ -147,6 +168,20 @@ public class ReportServiceImpl implements ReportService {
                 .build();
     }
 
+    private DeletedAssetReportRowDto toDeletedAssetRow(AssetDeletionLog deletionLog) {
+        Asset asset = deletionLog.getAsset();
+
+        return DeletedAssetReportRowDto.builder()
+                .deletionLogId(deletionLog.getId())
+                .assetId(asset.getId())
+                .assetDisplayId(AssetDisplayIdUtil.build(asset))
+                .assetName(asset.getAssetName())
+                .deletionDate(deletionLog.getDeletionDate())
+                .reason(defaultText(deletionLog.getReason()))
+                .deletedBy(defaultText(deletionLog.getDeletedBy()))
+                .build();
+    }
+
     private Comparator<DetailedReportRowDto> buildDetailedComparator(String sortBy, String sortDir) {
         Comparator<DetailedReportRowDto> comparator = switch (normalize(sortBy)) {
             case "assetname" -> comparingText(DetailedReportRowDto::getAssetName);
@@ -200,6 +235,23 @@ public class ReportServiceImpl implements ReportService {
                 .anyMatch(value -> value.contains(query));
     }
 
+    private boolean matchesDeletedSearch(DeletedAssetReportRowDto item, String search) {
+        String query = normalize(search);
+
+        if (query.isBlank()) {
+            return true;
+        }
+
+        return List.of(
+                        item.getAssetDisplayId(),
+                        item.getAssetName(),
+                        item.getReason(),
+                        item.getDeletedBy()
+                ).stream()
+                .map(this::normalize)
+                .anyMatch(value -> value.contains(query));
+    }
+
     private boolean matchesFilter(String value, String filter) {
         String normalizedFilter = normalize(filter);
         return normalizedFilter.isBlank() || "all".equals(normalizedFilter) || normalize(value).equals(normalizedFilter);
@@ -243,6 +295,8 @@ public class ReportServiceImpl implements ReportService {
             case "damage_asset" -> "Marked Damaged";
             case "expire_asset" -> "Marked Expired";
             case "return_asset" -> "Returned";
+            case "delete_asset" -> "Deleted";
+            case "restore_asset" -> "Restored";
             case "edit_asset" -> "Edited";
             default -> defaultText(source);
         };
