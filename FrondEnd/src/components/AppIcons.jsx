@@ -57,6 +57,35 @@ export function FileTextIcon(props) {
   );
 }
 
+export function UploadIcon(props) {
+  return (
+    <SvgIcon {...props}>
+      <path d="M12 16V5" />
+      <path d="m7.5 9.5 4.5-4.5 4.5 4.5" />
+      <path d="M5 19.5H19" />
+    </SvgIcon>
+  );
+}
+
+export function DownloadIcon(props) {
+  return (
+    <SvgIcon {...props}>
+      <path d="M12 4.5V15.5" />
+      <path d="m7.5 11.5 4.5 4.5 4.5-4.5" />
+      <path d="M5 19.5H19" />
+    </SvgIcon>
+  );
+}
+
+export function FolderOpenIcon(props) {
+  return (
+    <SvgIcon {...props}>
+      <path d="M3.5 8.5A2.5 2.5 0 0 1 6 6H10L12 8H18A2.5 2.5 0 0 1 20.5 10.5V16A2.5 2.5 0 0 1 18 18.5H6A2.5 2.5 0 0 1 3.5 16Z" />
+      <path d="M3.5 10.5H20.5" />
+    </SvgIcon>
+  );
+}
+
 export function LogOutIcon(props) {
   return (
     <SvgIcon {...props}>
@@ -71,6 +100,16 @@ export function ChevronLeftIcon(props) {
   return (
     <SvgIcon {...props}>
       <path d="m15 18-6-6 6-6" />
+    </SvgIcon>
+  );
+}
+
+export function MenuIcon(props) {
+  return (
+    <SvgIcon {...props}>
+      <path d="M4 7H20" />
+      <path d="M4 12H20" />
+      <path d="M4 17H20" />
     </SvgIcon>
   );
 }

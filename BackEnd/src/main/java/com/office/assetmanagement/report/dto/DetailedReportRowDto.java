@@ -31,6 +31,8 @@ public class DetailedReportRowDto {
 
     private String status;
 
+    private long documentCount;
+
     private String serialNumber;
 
     private String brand;

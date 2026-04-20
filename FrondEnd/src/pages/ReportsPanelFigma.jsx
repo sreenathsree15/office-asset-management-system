@@ -2,16 +2,34 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeftIcon,
   ArrowUpDownIcon,
+  DownloadIcon,
   FileSpreadsheetIcon,
   FileTextIcon,
+  FolderOpenIcon,
   HistoryIcon,
   PieChartIcon,
   SearchIcon,
   TrashIcon,
+  UploadIcon,
   XIcon
 } from "../components/AppIcons";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080";
+const DOCUMENT_TYPE_OPTIONS = [
+  "Invoice",
+  "Warranty",
+  "AMC Contract",
+  "Repair Bill",
+  "Transfer Document",
+  "Other"
+];
+const MAX_DOCUMENT_FILE_SIZE_BYTES = 5 * 1024 * 1024;
+const ALLOWED_DOCUMENT_MIME_TYPES = new Set([
+  "application/pdf",
+  "image/jpeg",
+  "image/jpg",
+  "image/png"
+]);
 
 const REPORT_CARDS = [
   {
@@ -136,12 +154,24 @@ function formatDateTime(value) {
   });
 }
 
+function formatCompactDate(value) {
+  if (!value || value === "-") {
+    return "-";
+  }
+
+  return new Date(value).toLocaleDateString("en-CA", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  });
+}
+
 function normalizeText(value) {
   return (value ?? "").trim().toLowerCase();
 }
 
 function downloadBlob(content, fileName, type) {
-  const blob = new Blob([content], { type });
+  const blob = content instanceof Blob ? content : new Blob([content], { type });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
@@ -161,6 +191,40 @@ function escapeHtml(value) {
 function buildCsvCell(value) {
   const text = String(value ?? "");
   return `"${text.replaceAll('"', '""')}"`;
+}
+
+function formatFileSize(size) {
+  if (!Number.isFinite(size) || size <= 0) {
+    return "0 KB";
+  }
+
+  if (size >= 1024 * 1024) {
+    return `${(size / (1024 * 1024)).toFixed(2)} MB`;
+  }
+
+  return `${(size / 1024).toFixed(2)} KB`;
+}
+
+function validateSelectedDocumentFile(file) {
+  if (!file) {
+    return "Select a file to upload.";
+  }
+
+  if (!ALLOWED_DOCUMENT_MIME_TYPES.has((file.type ?? "").toLowerCase())) {
+    return "Only PDF, JPG, and PNG files are supported.";
+  }
+
+  if (file.size > MAX_DOCUMENT_FILE_SIZE_BYTES) {
+    return "File size exceeds 5MB. Upload a smaller file.";
+  }
+
+  return "";
+}
+
+function extractFileName(headers, fallbackFileName) {
+  const disposition = headers.get("content-disposition") ?? "";
+  const match = disposition.match(/filename=\"?([^\";]+)\"?/i);
+  return match?.[1] ?? fallbackFileName;
 }
 
 function statusClassName(status) {
@@ -483,6 +547,18 @@ export default function ReportsPanelFigma({
   const [isExportingHistory, setIsExportingHistory] = useState(false);
   const [isExportingDeleted, setIsExportingDeleted] = useState(false);
   const [isExportingSummary, setIsExportingSummary] = useState(false);
+  const [documentModalAsset, setDocumentModalAsset] = useState(null);
+  const [uploadModalAsset, setUploadModalAsset] = useState(null);
+  const [assetDocuments, setAssetDocuments] = useState([]);
+  const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
+  const [isUploadingDocument, setIsUploadingDocument] = useState(false);
+  const [isDownloadingDocuments, setIsDownloadingDocuments] = useState(false);
+  const [documentRefreshKey, setDocumentRefreshKey] = useState(0);
+  const [uploadDocumentForm, setUploadDocumentForm] = useState({
+    documentType: "",
+    description: "",
+    file: null
+  });
 
   const authHeaders = {
     Authorization: `${user?.tokenType ?? "Bearer"} ${user?.token ?? ""}`
@@ -552,6 +628,45 @@ export default function ReportsPanelFigma({
     return parseResponse(response);
   };
 
+  const fetchAssetDocuments = async (assetId) => {
+    const response = await fetch(`${API_BASE_URL}/api/assets/${assetId}/documents`, {
+      method: "GET",
+      headers: authHeaders
+    });
+
+    return parseResponse(response);
+  };
+
+  const downloadDocumentBlob = async (url, fallbackFileName) => {
+    const response = await fetch(`${API_BASE_URL}${url}`, {
+      method: "GET",
+      headers: authHeaders
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(errorText || "Unable to download the document.");
+    }
+
+    const blob = await response.blob();
+    downloadBlob(blob, extractFileName(response.headers, fallbackFileName), blob.type || "application/octet-stream");
+  };
+
+  const downloadAssetArchive = async (assetId, fallbackFileName) => {
+    const response = await fetch(`${API_BASE_URL}/api/assets/${assetId}/documents/archive`, {
+      method: "GET",
+      headers: authHeaders
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(errorText || "Unable to download the document archive.");
+    }
+
+    const blob = await response.blob();
+    downloadBlob(blob, extractFileName(response.headers, fallbackFileName), blob.type || "application/zip");
+  };
+
   useEffect(() => {
     if (activeView !== "detailed") {
       return undefined;
@@ -573,7 +688,7 @@ export default function ReportsPanelFigma({
     return () => {
       window.clearTimeout(timer);
     };
-  }, [activeView, detailedFilters, refreshKey, user?.token, user?.tokenType, setPageError]);
+  }, [activeView, detailedFilters, refreshKey, documentRefreshKey, user?.token, user?.tokenType, setPageError]);
 
   useEffect(() => {
     if (activeView !== "history") {
@@ -643,6 +758,37 @@ export default function ReportsPanelFigma({
     return undefined;
   }, [activeView, refreshKey, user?.token, user?.tokenType, setPageError]);
 
+  useEffect(() => {
+    if (!documentModalAsset?.assetId) {
+      setAssetDocuments([]);
+      return undefined;
+    }
+
+    let isMounted = true;
+    setIsLoadingDocuments(true);
+
+    fetchAssetDocuments(documentModalAsset.assetId)
+      .then((payload) => {
+        if (isMounted) {
+          setAssetDocuments(Array.isArray(payload) ? payload : []);
+        }
+      })
+      .catch((error) => {
+        if (isMounted) {
+          setPageError(error.message);
+        }
+      })
+      .finally(() => {
+        if (isMounted) {
+          setIsLoadingDocuments(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [documentModalAsset?.assetId, documentRefreshKey, user?.token, user?.tokenType, setPageError]);
+
   const handleOpenView = (nextView) => {
     clearMessages();
     setActiveView(nextView);
@@ -696,6 +842,148 @@ export default function ReportsPanelFigma({
     setDeletedFilters(INITIAL_DELETED_FILTERS);
   };
 
+  const closeDocumentModal = () => {
+    setDocumentModalAsset(null);
+    setAssetDocuments([]);
+    setIsLoadingDocuments(false);
+  };
+
+  const closeUploadModal = () => {
+    setUploadModalAsset(null);
+    setUploadDocumentForm({
+      documentType: "",
+      description: "",
+      file: null
+    });
+    setIsUploadingDocument(false);
+  };
+
+  const openDocumentModal = (asset) => {
+    clearMessages();
+    setDocumentModalAsset(asset);
+  };
+
+  const openUploadModal = (asset) => {
+    clearMessages();
+    setUploadModalAsset(asset);
+    setUploadDocumentForm({
+      documentType: "",
+      description: "",
+      file: null
+    });
+  };
+
+  const handleUploadDocumentFieldChange = (event) => {
+    const { name, value } = event.target;
+    clearMessages();
+    setUploadDocumentForm((current) => ({
+      ...current,
+      [name]: value
+    }));
+  };
+
+  const handleUploadDocumentFileChange = (event) => {
+    const file = event.target.files?.[0] ?? null;
+    event.target.value = "";
+    clearMessages();
+
+    if (!file) {
+      return;
+    }
+
+    const validationMessage = validateSelectedDocumentFile(file);
+    if (validationMessage) {
+      setPageError(validationMessage);
+      return;
+    }
+
+    setUploadDocumentForm((current) => ({
+      ...current,
+      file
+    }));
+  };
+
+  const handleSubmitDocumentUpload = async (event) => {
+    event.preventDefault();
+    clearMessages();
+
+    if (!uploadModalAsset?.assetId) {
+      setPageError("Select an asset before uploading a document.");
+      return;
+    }
+
+    if (!uploadDocumentForm.documentType) {
+      setPageError("Select a document type before uploading.");
+      return;
+    }
+
+    if (!uploadDocumentForm.file) {
+      setPageError("Select a file to upload.");
+      return;
+    }
+
+    setIsUploadingDocument(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", uploadDocumentForm.file);
+      formData.append("documentType", uploadDocumentForm.documentType);
+
+      if (uploadDocumentForm.description.trim()) {
+        formData.append("description", uploadDocumentForm.description.trim());
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/assets/${uploadModalAsset.assetId}/documents`, {
+        method: "POST",
+        headers: authHeaders,
+        body: formData
+      });
+
+      await parseResponse(response);
+      setDocumentRefreshKey((current) => current + 1);
+      setPageNotice(`Document uploaded for "${uploadModalAsset.assetName}".`);
+      const uploadedAsset = uploadModalAsset;
+      closeUploadModal();
+      setDocumentModalAsset(uploadedAsset);
+    } catch (error) {
+      setPageError(error.message);
+    } finally {
+      setIsUploadingDocument(false);
+    }
+  };
+
+  const handleDownloadSingleDocument = async (document) => {
+    clearMessages();
+
+    try {
+      await downloadDocumentBlob(document.downloadUrl, document.fileName);
+      setPageNotice(`Downloaded "${document.fileName}".`);
+    } catch (error) {
+      setPageError(error.message);
+    }
+  };
+
+  const handleDownloadAllDocuments = async () => {
+    if (!documentModalAsset?.assetId) {
+      return;
+    }
+
+    clearMessages();
+    setIsDownloadingDocuments(true);
+
+    try {
+      await downloadAssetArchive(
+        documentModalAsset.assetId,
+        `${documentModalAsset.assetDisplayId || documentModalAsset.assetName}-documents.zip`
+      );
+      setPageNotice(`All documents downloaded for "${documentModalAsset.assetName}".`);
+    } catch (error) {
+      setPageError(error.message);
+    } finally {
+      setIsDownloadingDocuments(false);
+    }
+  };
+
   const fetchAllDetailedRows = async () => {
     const payload = await fetchDetailedReport({
       ...detailedFilters,
@@ -739,6 +1027,7 @@ export default function ReportsPanelFigma({
           "Category",
           "Employee Name",
           "Section",
+          "Documents",
           "Seat Number",
           "Status",
           "Serial Number",
@@ -755,6 +1044,7 @@ export default function ReportsPanelFigma({
           item.categoryName,
           item.employeeName,
           item.section,
+          item.documentCount ?? 0,
           item.seatNumber,
           item.status,
           item.serialNumber,
@@ -796,6 +1086,7 @@ export default function ReportsPanelFigma({
           <td>${escapeHtml(item.categoryName)}</td>
           <td>${escapeHtml(item.employeeName)}</td>
           <td>${escapeHtml(item.section)}</td>
+          <td>${escapeHtml(String(item.documentCount ?? 0))}</td>
           <td>${escapeHtml(item.status)}</td>
         </tr>
       `).join("");
@@ -824,6 +1115,7 @@ export default function ReportsPanelFigma({
                   <th>Category</th>
                   <th>Employee Name</th>
                   <th>Section</th>
+                  <th>Documents</th>
                   <th>Status</th>
                 </tr>
               </thead>
@@ -1179,7 +1471,8 @@ export default function ReportsPanelFigma({
       actionLabel: mapHistoryActionLabel(item.action),
       from: item.oldStatus || "-",
       to: item.newStatus || "-",
-      eventDate: formatDateTime(item.eventDate),
+      eventDate: formatCompactDate(item.eventDate),
+      eventDateFull: formatDateTime(item.eventDate),
       remarks: item.details || "-"
     })),
     [historyReport.items]
@@ -1207,8 +1500,10 @@ export default function ReportsPanelFigma({
     [summaryReport]
   );
 
-  return activeView === "home" ? (
+  return (
     <>
+      {activeView === "home" ? (
+        <>
       <header className="asset-page-header">
         <div>
           <h1>Reports</h1>
@@ -1233,9 +1528,9 @@ export default function ReportsPanelFigma({
           </button>
         ))}
       </section>
-    </>
-  ) : activeView === "detailed" ? (
-    <>
+        </>
+      ) : activeView === "detailed" ? (
+        <>
       <header className="asset-page-header">
         <div>
           <h1>Reports</h1>
@@ -1247,7 +1542,7 @@ export default function ReportsPanelFigma({
         <span>Back to Reports</span>
       </button>
 
-      <section className="report-toolbar-card">
+      <section className="report-toolbar-card report-toolbar-card-history">
         <div className="report-filter-grid">
           <label className="report-search-field">
             <SearchIcon className="report-search-icon-svg" />
@@ -1312,6 +1607,7 @@ export default function ReportsPanelFigma({
                 <th>Category</th>
                 <th>Employee Name</th>
                 <th>Section</th>
+                <th className="report-documents-column">Documents</th>
                 <th>Status</th>
                 <th className="report-action-column">Delete</th>
               </tr>
@@ -1319,11 +1615,11 @@ export default function ReportsPanelFigma({
             <tbody>
               {isLoadingDetailed ? (
                 <tr>
-                  <td className="report-empty-cell" colSpan="7">Loading report...</td>
+                  <td className="report-empty-cell" colSpan="8">Loading report...</td>
                 </tr>
               ) : detailedReport.items.length === 0 ? (
                 <tr>
-                  <td className="report-empty-cell" colSpan="7">No assets match the selected filters.</td>
+                  <td className="report-empty-cell" colSpan="8">No assets match the selected filters.</td>
                 </tr>
               ) : (
                 detailedReport.items.map((item) => (
@@ -1333,6 +1629,29 @@ export default function ReportsPanelFigma({
                     <td>{item.categoryName}</td>
                     <td>{item.employeeName}</td>
                     <td>{item.section}</td>
+                    <td className="report-documents-cell">
+                      {Number(item.documentCount ?? 0) > 0 ? (
+                        <button
+                          className="report-document-button"
+                          type="button"
+                          onClick={() => openDocumentModal(item)}
+                        >
+                          <FolderOpenIcon className="report-document-button-icon" />
+                          <span>
+                            {item.documentCount} {Number(item.documentCount) === 1 ? "doc" : "docs"}
+                          </span>
+                        </button>
+                      ) : (
+                        <button
+                          className="report-document-button report-document-button-upload"
+                          type="button"
+                          onClick={() => openUploadModal(item)}
+                        >
+                          <UploadIcon className="report-document-button-icon" />
+                          <span>Upload</span>
+                        </button>
+                      )}
+                    </td>
                     <td><span className={statusClassName(item.status)}>{item.status}</span></td>
                     <td>
                       <button
@@ -1363,9 +1682,9 @@ export default function ReportsPanelFigma({
           </div>
         </div>
       </section>
-    </>
-  ) : activeView === "history" ? (
-    <>
+        </>
+      ) : activeView === "history" ? (
+        <>
       <header className="asset-page-header">
         <div>
           <h1>Reports</h1>
@@ -1413,18 +1732,18 @@ export default function ReportsPanelFigma({
         </div>
       </section>
 
-      <section className="report-table-card">
+      <section className="report-table-card report-table-card-history">
         <div className="report-table-scroll">
           <table className="report-table report-table-history-figma">
             <thead>
               <tr>
-                <th><span className="report-sort-button"><span>Asset ID</span><ArrowUpDownIcon className="report-sort-icon" /></span></th>
-                <th>Asset Name</th>
-                <th>Action Type</th>
-                <th>From</th>
-                <th>To</th>
-                <th><span className="report-sort-button"><span>Action Date</span><ArrowUpDownIcon className="report-sort-icon" /></span></th>
-                <th>Remarks</th>
+                <th className="report-history-col-id"><span className="report-sort-button"><span>Asset ID</span><ArrowUpDownIcon className="report-sort-icon" /></span></th>
+                <th className="report-history-col-name">Asset Name</th>
+                <th className="report-history-col-action">Action Type</th>
+                <th className="report-history-col-from">From</th>
+                <th className="report-history-col-to">To</th>
+                <th className="report-history-col-date"><span className="report-sort-button"><span>Action Date</span><ArrowUpDownIcon className="report-sort-icon" /></span></th>
+                <th className="report-history-col-remarks">Remarks</th>
               </tr>
             </thead>
             <tbody>
@@ -1439,13 +1758,27 @@ export default function ReportsPanelFigma({
               ) : (
                 historyRows.map((item) => (
                   <tr key={item.historyId}>
-                    <td>{item.assetDisplayId}</td>
-                    <td>{item.assetName}</td>
-                    <td><span className={actionClassName(item.actionLabel)}>{item.actionLabel}</span></td>
-                    <td>{item.from}</td>
-                    <td>{item.to}</td>
-                    <td>{item.eventDate}</td>
-                    <td>{item.remarks}</td>
+                    <td className="report-history-col-id">
+                      <span className="report-history-value report-history-value-id">{item.assetDisplayId}</span>
+                    </td>
+                    <td className="report-history-col-name">
+                      <span className="report-history-value report-history-value-name" title={item.assetName}>{item.assetName}</span>
+                    </td>
+                    <td className="report-history-col-action">
+                      <span className={actionClassName(item.actionLabel)}>{item.actionLabel}</span>
+                    </td>
+                    <td className="report-history-col-from">
+                      <span className="report-history-value" title={item.from}>{item.from}</span>
+                    </td>
+                    <td className="report-history-col-to">
+                      <span className="report-history-value" title={item.to}>{item.to}</span>
+                    </td>
+                    <td className="report-history-col-date">
+                      <span className="report-history-value report-history-value-date" title={item.eventDateFull}>{item.eventDate}</span>
+                    </td>
+                    <td className="report-history-col-remarks">
+                      <span className="report-history-value report-history-value-remarks" title={item.remarks}>{item.remarks}</span>
+                    </td>
                   </tr>
                 ))
               )}
@@ -1465,9 +1798,9 @@ export default function ReportsPanelFigma({
           </div>
         </div>
       </section>
-    </>
-  ) : activeView === "deleted-history" ? (
-    <>
+        </>
+      ) : activeView === "deleted-history" ? (
+        <>
       <header className="asset-page-header">
         <div>
           <h1>Reports</h1>
@@ -1565,9 +1898,9 @@ export default function ReportsPanelFigma({
           </div>
         </div>
       </section>
-    </>
-  ) : (
-    <>
+        </>
+      ) : (
+        <>
       <header className="asset-page-header">
         <div>
           <h1>Reports</h1>
@@ -1648,6 +1981,219 @@ export default function ReportsPanelFigma({
           </section>
         </>
       )}
+        </>
+      )}
+
+      {documentModalAsset ? (
+        <div className="modal-backdrop" onClick={closeDocumentModal}>
+          <section
+            className="asset-modal asset-modal-documents"
+            role="dialog"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="asset-modal-header">
+              <div>
+                <p className="auth-modal-caption">Detailed View</p>
+                <h3>Documents for {documentModalAsset.assetDisplayId}</h3>
+                <p className="auth-modal-copy">{documentModalAsset.assetName}</p>
+              </div>
+
+              <button
+                aria-label="Close documents dialog"
+                className="modal-close-button"
+                type="button"
+                onClick={closeDocumentModal}
+              >
+                X
+              </button>
+            </div>
+
+            <div className="asset-modal-scroll">
+              <div className="report-document-toolbar">
+                <button
+                  className="secondary-button report-document-toolbar-button"
+                  type="button"
+                  onClick={() => {
+                    const currentAsset = documentModalAsset;
+                    closeDocumentModal();
+                    openUploadModal(currentAsset);
+                  }}
+                >
+                  <UploadIcon className="report-button-icon" />
+                  <span>Upload Document</span>
+                </button>
+
+                <button
+                  className="primary-button report-export-button report-export-excel report-document-toolbar-button"
+                  disabled={isDownloadingDocuments || assetDocuments.length === 0}
+                  type="button"
+                  onClick={handleDownloadAllDocuments}
+                >
+                  <DownloadIcon className="report-button-icon" />
+                  <span>{isDownloadingDocuments ? "Preparing..." : "Download All as ZIP"}</span>
+                </button>
+              </div>
+
+              {isLoadingDocuments ? (
+                <p className="asset-empty-state">Loading documents...</p>
+              ) : assetDocuments.length === 0 ? (
+                <p className="asset-empty-state">
+                  No documents are attached to this asset yet. Use Upload Document to add invoices,
+                  warranty cards, or repair bills.
+                </p>
+              ) : (
+                <div className="report-document-list">
+                  {assetDocuments.map((document) => (
+                    <article key={document.docId} className="report-document-card">
+                      <div className="report-document-card-main">
+                        <span className="report-document-card-icon">
+                          <FileTextIcon />
+                        </span>
+
+                        <div className="report-document-card-copy">
+                          <div className="report-document-card-meta">
+                            <span className="report-document-type-pill">
+                              {document.documentType || "Document"}
+                            </span>
+                          </div>
+                          <strong>{document.fileName}</strong>
+                          <span>
+                            {formatFileSize(document.fileSize)} - Uploaded {formatDateTime(document.uploadDate)}
+                          </span>
+                          {document.description ? <p>{document.description}</p> : null}
+                        </div>
+                      </div>
+
+                      <button
+                        className="report-row-action-button"
+                        type="button"
+                        onClick={() => handleDownloadSingleDocument(document)}
+                      >
+                        <DownloadIcon className="report-row-action-icon" />
+                      </button>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {uploadModalAsset ? (
+        <div className="modal-backdrop" onClick={closeUploadModal}>
+          <section
+            className="asset-modal asset-modal-upload"
+            role="dialog"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="asset-modal-header">
+              <div>
+                <p className="auth-modal-caption">Detailed View</p>
+                <h3>Upload Document</h3>
+                <p className="auth-modal-copy">
+                  {uploadModalAsset.assetDisplayId} - {uploadModalAsset.assetName}
+                </p>
+              </div>
+
+              <button
+                aria-label="Close upload document dialog"
+                className="modal-close-button"
+                type="button"
+                onClick={closeUploadModal}
+              >
+                X
+              </button>
+            </div>
+
+            <form className="asset-form" onSubmit={handleSubmitDocumentUpload}>
+              <div className="asset-modal-scroll">
+                <div className="asset-form-grid">
+                  <label className="field asset-field-full">
+                    <span>Document Type</span>
+                    <select
+                      name="documentType"
+                      onChange={handleUploadDocumentFieldChange}
+                      value={uploadDocumentForm.documentType}
+                    >
+                      <option value="">Select document type</option>
+                      {DOCUMENT_TYPE_OPTIONS.map((type) => (
+                        <option key={type} value={type}>
+                          {type}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <div className="asset-field-full">
+                    <span className="report-upload-label">File</span>
+                    {!uploadDocumentForm.file ? (
+                      <label className="report-upload-dropzone">
+                        <UploadIcon className="report-upload-dropzone-icon" />
+                        <strong>Click to upload</strong>
+                        <span>PDF, JPG, PNG up to 5MB</span>
+                        <input
+                          accept=".pdf,.jpg,.jpeg,.png"
+                          onChange={handleUploadDocumentFileChange}
+                          type="file"
+                        />
+                      </label>
+                    ) : (
+                      <div className="report-upload-selected">
+                        <div className="report-upload-selected-main">
+                          <span className="report-document-card-icon">
+                            <FileTextIcon />
+                          </span>
+                          <div className="report-document-card-copy">
+                            <strong>{uploadDocumentForm.file.name}</strong>
+                            <span>{formatFileSize(uploadDocumentForm.file.size)}</span>
+                          </div>
+                        </div>
+
+                        <button
+                          className="asset-document-remove"
+                          type="button"
+                          onClick={() => setUploadDocumentForm((current) => ({ ...current, file: null }))}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  <label className="field asset-field-full">
+                    <span>Description (Optional)</span>
+                    <textarea
+                      name="description"
+                      onChange={handleUploadDocumentFieldChange}
+                      placeholder="Add notes about this document"
+                      rows="4"
+                      value={uploadDocumentForm.description}
+                    />
+                  </label>
+                </div>
+              </div>
+
+              <div className="asset-modal-footer">
+                <button className="secondary-button" type="button" onClick={closeUploadModal}>
+                  Cancel
+                </button>
+                <button
+                  className="primary-button"
+                  disabled={
+                    isUploadingDocument ||
+                    !uploadDocumentForm.documentType ||
+                    !uploadDocumentForm.file
+                  }
+                  type="submit"
+                >
+                  {isUploadingDocument ? "Uploading..." : "Upload"}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      ) : null}
     </>
   );
 }

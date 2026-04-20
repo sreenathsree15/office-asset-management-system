@@ -11,11 +11,13 @@ import {
   EditIcon,
   FileTextIcon,
   LogOutIcon,
+  MenuIcon,
   PackageIcon,
   RefreshCwIcon,
   RotateCcwIcon,
   ShieldCheckIcon,
   TrashIcon,
+  UploadIcon,
   UserCogIcon,
   UserPlusIcon
 } from "../components/AppIcons";
@@ -25,7 +27,23 @@ import ReportsPanel from "./ReportsPanelFigma";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080";
 const MESSAGE_TIMEOUT_MS = 5000;
 const SIDEBAR_COLLAPSE_STORAGE_KEY = "asset-portal-sidebar-collapsed";
+const MOBILE_BREAKPOINT_PX = 960;
 const WARRANTY_ALERT_WINDOW_DAYS = 30;
+const DOCUMENT_TYPE_OPTIONS = [
+  "Invoice",
+  "Warranty",
+  "AMC Contract",
+  "Repair Bill",
+  "Transfer Document",
+  "Other"
+];
+const MAX_DOCUMENT_FILE_SIZE_BYTES = 5 * 1024 * 1024;
+const ALLOWED_DOCUMENT_MIME_TYPES = new Set([
+  "application/pdf",
+  "image/jpeg",
+  "image/jpg",
+  "image/png"
+]);
 
 const ACTION_CARDS = [
   {
@@ -135,6 +153,10 @@ const createEmptyBulkAssetForm = () => ({
   status: "Available",
   quantity: "",
   remarks: ""
+});
+
+const createEmptyQueuedDocumentDraft = () => ({
+  documentType: ""
 });
 
 function getTodayDateString() {
@@ -317,6 +339,50 @@ function formatDisplayDate(value) {
     : value;
 }
 
+function formatFileSize(size) {
+  if (!Number.isFinite(size) || size <= 0) {
+    return "0 KB";
+  }
+
+  if (size >= 1024 * 1024) {
+    return `${(size / (1024 * 1024)).toFixed(2)} MB`;
+  }
+
+  return `${(size / 1024).toFixed(2)} KB`;
+}
+
+function validateSelectedDocumentFile(file) {
+  if (!file) {
+    return "Select a file to upload.";
+  }
+
+  if (!ALLOWED_DOCUMENT_MIME_TYPES.has((file.type ?? "").toLowerCase())) {
+    return "Only PDF, JPG, and PNG files are supported.";
+  }
+
+  if (file.size > MAX_DOCUMENT_FILE_SIZE_BYTES) {
+    return "File size exceeds 5MB. Upload a smaller file.";
+  }
+
+  return "";
+}
+
+function buildQueuedDocument(documentType, file) {
+  return {
+    id: `${documentType}-${file.name}-${file.size}-${Date.now()}`,
+    documentType,
+    file
+  };
+}
+
+function buildBatchIdentifier() {
+  if (typeof window !== "undefined" && window.crypto?.randomUUID) {
+    return window.crypto.randomUUID();
+  }
+
+  return `batch-${Date.now()}-${Math.round(Math.random() * 100000)}`;
+}
+
 export default function DashboardPage() {
   const { user, logout, updateSession } = useAuth();
   const [activePanel, setActivePanel] = useState("dashboard");
@@ -327,6 +393,14 @@ export default function DashboardPage() {
       return false;
     }
   });
+  const [isMobileViewport, setIsMobileViewport] = useState(() => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+
+    return window.innerWidth <= MOBILE_BREAKPOINT_PX;
+  });
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [categories, setCategories] = useState([]);
   const [sections, setSections] = useState([]);
   const [assetSummary, setAssetSummary] = useState({
@@ -366,6 +440,10 @@ export default function DashboardPage() {
   const [activeModal, setActiveModal] = useState(null);
   const [assetForm, setAssetForm] = useState(createEmptyAssetForm);
   const [bulkAssetForm, setBulkAssetForm] = useState(createEmptyBulkAssetForm);
+  const [assetDocuments, setAssetDocuments] = useState([]);
+  const [bulkDocuments, setBulkDocuments] = useState([]);
+  const [assetDocumentDraft, setAssetDocumentDraft] = useState(createEmptyQueuedDocumentDraft);
+  const [bulkDocumentDraft, setBulkDocumentDraft] = useState(createEmptyQueuedDocumentDraft);
   const [editAssetForm, setEditAssetForm] = useState(createEmptyEditAssetForm);
   const [assignAssetForm, setAssignAssetForm] = useState(createEmptyAssignAssetForm);
   const [reassignAssetForm, setReassignAssetForm] = useState(createEmptyReassignAssetForm);
@@ -420,6 +498,19 @@ export default function DashboardPage() {
   const isReportsPanel = activePanel === "reports";
   const currentSidebarLabel =
     SIDEBAR_ITEMS.find((item) => item.key === activePanel)?.label ?? "Asset Management";
+  const layoutClassName = [
+    "asset-layout",
+    !isMobileViewport && isSidebarCollapsed ? "asset-layout-sidebar-collapsed" : "",
+    isMobileSidebarOpen ? "asset-layout-mobile-sidebar-open" : ""
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const sidebarClassName = [
+    "asset-sidebar",
+    isMobileSidebarOpen ? "asset-sidebar-mobile-open" : ""
+  ]
+    .filter(Boolean)
+    .join(" ");
   const sectionNameConflict = sections.find((section) => (
     normalizeText(section.sectionName) === normalizeText(sectionForm.sectionName) &&
     String(section.id) !== String(sectionForm.id)
@@ -617,13 +708,93 @@ export default function DashboardPage() {
     return payload;
   };
 
+  const uploadSingleAssetDocument = async (assetId, queuedDocument) => {
+    const formData = new FormData();
+    formData.append("file", queuedDocument.file);
+    formData.append("documentType", queuedDocument.documentType);
+
+    const response = await fetch(`${API_BASE_URL}/api/assets/${assetId}/documents`, {
+      method: "POST",
+      headers: {
+        Authorization: `${user?.tokenType ?? "Bearer"} ${user?.token ?? ""}`
+      },
+      body: formData
+    });
+
+    return parseResponse(response);
+  };
+
+  const uploadAssetDocuments = async (assetId, queuedDocuments) => {
+    if (!assetId || queuedDocuments.length === 0) {
+      return [];
+    }
+
+    const uploads = [];
+
+    for (const queuedDocument of queuedDocuments) {
+      uploads.push(await uploadSingleAssetDocument(assetId, queuedDocument));
+    }
+
+    return uploads;
+  };
+
+  const uploadSharedDocumentsToAssets = async (assetIds, queuedDocuments) => {
+    if (!Array.isArray(assetIds) || assetIds.length === 0 || queuedDocuments.length === 0) {
+      return [];
+    }
+
+    const batchId = buildBatchIdentifier();
+    const uploads = [];
+
+    for (const queuedDocument of queuedDocuments) {
+      const formData = new FormData();
+      formData.append("file", queuedDocument.file);
+      formData.append("documentType", queuedDocument.documentType);
+      formData.append("batchId", batchId);
+      assetIds.forEach((assetId) => {
+        formData.append("assetIds", String(assetId));
+      });
+
+      const response = await fetch(`${API_BASE_URL}/api/assets/documents/bulk`, {
+        method: "POST",
+        headers: {
+          Authorization: `${user?.tokenType ?? "Bearer"} ${user?.token ?? ""}`
+        },
+        body: formData
+      });
+
+      uploads.push(await parseResponse(response));
+    }
+
+    return uploads;
+  };
+
   const getSectionOptionLabel = (section) => {
     const code = (section?.sectionCode ?? "").trim();
     return code ? `${section.sectionName} (${code})` : section.sectionName;
   };
 
   const toggleSidebar = () => {
+    if (isMobileViewport) {
+      setIsMobileSidebarOpen((current) => !current);
+      return;
+    }
+
     setIsSidebarCollapsed((current) => !current);
+  };
+
+  const openLogoutConfirmation = () => {
+    setModalError("");
+    setIsMobileSidebarOpen(false);
+    setActiveModal({
+      key: "logout-confirm",
+      title: "Logout"
+    });
+  };
+
+  const handleConfirmLogout = () => {
+    closeModal();
+    logout();
   };
 
   useEffect(() => {
@@ -633,6 +804,28 @@ export default function DashboardPage() {
       // Ignore storage errors and keep the current UI state in memory.
     }
   }, [isSidebarCollapsed]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return undefined;
+    }
+
+    const handleResize = () => {
+      const isMobile = window.innerWidth <= MOBILE_BREAKPOINT_PX;
+      setIsMobileViewport(isMobile);
+
+      if (!isMobile) {
+        setIsMobileSidebarOpen(false);
+      }
+    };
+
+    handleResize();
+    window.addEventListener("resize", handleResize);
+
+    return () => {
+      window.removeEventListener("resize", handleResize);
+    };
+  }, []);
 
   useEffect(() => {
     if (!pageError && !pageNotice) {
@@ -726,7 +919,7 @@ export default function DashboardPage() {
     const previousOverflow = document.body.style.overflow;
     const previousTouchAction = document.body.style.touchAction;
 
-    if (activeModal) {
+    if (activeModal || (isMobileViewport && isMobileSidebarOpen)) {
       document.body.style.overflow = "hidden";
       document.body.style.touchAction = "none";
     }
@@ -735,7 +928,7 @@ export default function DashboardPage() {
       document.body.style.overflow = previousOverflow;
       document.body.style.touchAction = previousTouchAction;
     };
-  }, [activeModal]);
+  }, [activeModal, isMobileSidebarOpen, isMobileViewport]);
 
   useEffect(() => {
     let isMounted = true;
@@ -840,10 +1033,14 @@ export default function DashboardPage() {
 
     if (card.key === "new-asset") {
       setAssetForm(createEmptyAssetForm());
+      setAssetDocuments([]);
+      setAssetDocumentDraft(createEmptyQueuedDocumentDraft());
     }
 
     if (card.key === "bulk-add") {
       setBulkAssetForm(createEmptyBulkAssetForm());
+      setBulkDocuments([]);
+      setBulkDocumentDraft(createEmptyQueuedDocumentDraft());
     }
 
     if (card.key === "edit-asset") {
@@ -1022,6 +1219,10 @@ export default function DashboardPage() {
     setIsSavingAdminName(false);
     setIsSavingAdminPassword(false);
     setEditAssetForm(createEmptyEditAssetForm());
+    setAssetDocuments([]);
+    setBulkDocuments([]);
+    setAssetDocumentDraft(createEmptyQueuedDocumentDraft());
+    setBulkDocumentDraft(createEmptyQueuedDocumentDraft());
     setDeleteAssetForm(createEmptyDeleteAssetForm());
     setSectionForm(createEmptySectionForm());
     setSeatNumberForm(createEmptySeatNumberForm());
@@ -1039,12 +1240,13 @@ export default function DashboardPage() {
 
   const handleSidebarItemClick = (item) => {
     if (item.type === "logout") {
-      logout();
+      openLogoutConfirmation();
       return;
     }
 
     setActivePanel(item.key);
     closeModal();
+    setIsMobileSidebarOpen(false);
 
     if (item.key === "admin-control") {
       Promise.all([refreshSectionsData(), refreshSeatNumbersData()]).catch((error) => {
@@ -1092,6 +1294,66 @@ export default function DashboardPage() {
   const handleBulkAssetFormChange = (event) => {
     const { name, value } = event.target;
     setBulkAssetForm((current) => ({ ...current, [name]: value }));
+  };
+
+  const handleAssetDocumentDraftChange = (event) => {
+    const { value } = event.target;
+    setModalError("");
+    setAssetDocumentDraft({ documentType: value });
+  };
+
+  const handleBulkDocumentDraftChange = (event) => {
+    const { value } = event.target;
+    setModalError("");
+    setBulkDocumentDraft({ documentType: value });
+  };
+
+  const queueDocumentForAsset = (event, scope) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+
+    if (!file) {
+      return;
+    }
+
+    const isSingleAssetScope = scope === "single";
+    const selectedType = isSingleAssetScope
+      ? assetDocumentDraft.documentType
+      : bulkDocumentDraft.documentType;
+    const existingDocuments = isSingleAssetScope ? assetDocuments : bulkDocuments;
+    const setDocuments = isSingleAssetScope ? setAssetDocuments : setBulkDocuments;
+    const setDraft = isSingleAssetScope ? setAssetDocumentDraft : setBulkDocumentDraft;
+
+    if (!selectedType) {
+      setModalError("Select a document type before choosing the file.");
+      return;
+    }
+
+    if (existingDocuments.some((document) => document.documentType === selectedType)) {
+      setModalError(`${selectedType} is already attached. Remove it first to upload a different file.`);
+      return;
+    }
+
+    const validationMessage = validateSelectedDocumentFile(file);
+    if (validationMessage) {
+      setModalError(validationMessage);
+      return;
+    }
+
+    setModalError("");
+    setDocuments((current) => [...current, buildQueuedDocument(selectedType, file)]);
+    setDraft(createEmptyQueuedDocumentDraft());
+  };
+
+  const removeQueuedDocument = (scope, documentId) => {
+    setModalError("");
+
+    if (scope === "single") {
+      setAssetDocuments((current) => current.filter((document) => document.id !== documentId));
+      return;
+    }
+
+    setBulkDocuments((current) => current.filter((document) => document.id !== documentId));
   };
 
   const handleEditAssetFormChange = (event) => {
@@ -1313,10 +1575,29 @@ export default function DashboardPage() {
       });
 
       const payload = await parseResponse(response);
+      let documentUploadError = "";
+
+      if (assetDocuments.length > 0) {
+        try {
+          await uploadAssetDocuments(payload.id, assetDocuments);
+        } catch (error) {
+          documentUploadError = error.message;
+        }
+      }
+
       await handleAssetDataChanged();
       closeModal();
-      setPageNotice(`Asset "${payload.assetName}" added successfully.`);
+      setPageNotice(
+        assetDocuments.length > 0
+          ? `Asset "${payload.assetName}" added successfully with ${assetDocuments.length} document${assetDocuments.length === 1 ? "" : "s"}.`
+          : `Asset "${payload.assetName}" added successfully.`
+      );
+      if (documentUploadError) {
+        setPageError(`Asset was saved, but the documents could not be uploaded: ${documentUploadError}`);
+      }
       setAssetForm(createEmptyAssetForm());
+      setAssetDocuments([]);
+      setAssetDocumentDraft(createEmptyQueuedDocumentDraft());
     } catch (error) {
       setModalError(error.message);
     } finally {
@@ -1352,11 +1633,32 @@ export default function DashboardPage() {
 
       const payload = await parseResponse(response);
       const assetCount = Array.isArray(payload) ? payload.length : Number(bulkAssetForm.quantity);
+      let documentUploadError = "";
+
+      if (bulkDocuments.length > 0 && Array.isArray(payload) && payload.length > 0) {
+        try {
+          await uploadSharedDocumentsToAssets(
+            payload.map((asset) => asset.id).filter(Boolean),
+            bulkDocuments
+          );
+        } catch (error) {
+          documentUploadError = error.message;
+        }
+      }
 
       await handleAssetDataChanged();
       closeModal();
-      setPageNotice(`${assetCount} assets added successfully. Serial numbers were generated automatically.`);
+      setPageNotice(
+        bulkDocuments.length > 0
+          ? `${assetCount} assets added successfully, and ${bulkDocuments.length} shared document${bulkDocuments.length === 1 ? "" : "s"} were attached.`
+          : `${assetCount} assets added successfully. Serial numbers were generated automatically.`
+      );
+      if (documentUploadError) {
+        setPageError(`Assets were saved, but the shared documents could not be uploaded: ${documentUploadError}`);
+      }
       setBulkAssetForm(createEmptyBulkAssetForm());
+      setBulkDocuments([]);
+      setBulkDocumentDraft(createEmptyQueuedDocumentDraft());
     } catch (error) {
       setModalError(error.message);
     } finally {
@@ -1952,7 +2254,7 @@ export default function DashboardPage() {
         </article>
       </section>
 
-      <section className="asset-actions-grid">
+      <section className="asset-actions-grid asset-actions-grid-main">
         {ACTION_CARDS.map((card) => (
           <button
             key={card.key}
@@ -2146,16 +2448,26 @@ export default function DashboardPage() {
         </div>
       ) : null}
 
-      <div className={isSidebarCollapsed ? "asset-layout asset-layout-sidebar-collapsed" : "asset-layout"}>
-        <aside className="asset-sidebar">
+      <div className={layoutClassName}>
+        <aside className={sidebarClassName}>
           <div className="asset-sidebar-brand">
             <div className="asset-sidebar-brand-copy">
               <h2>Asset Portal</h2>
               <p>{user?.username}</p>
             </div>
             <button
-              aria-label={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-              className={isSidebarCollapsed ? "asset-sidebar-chevron asset-sidebar-chevron-collapsed" : "asset-sidebar-chevron"}
+              aria-label={
+                isMobileViewport
+                  ? "Close navigation menu"
+                  : isSidebarCollapsed
+                    ? "Expand sidebar"
+                    : "Collapse sidebar"
+              }
+              className={
+                !isMobileViewport && isSidebarCollapsed
+                  ? "asset-sidebar-chevron asset-sidebar-chevron-collapsed"
+                  : "asset-sidebar-chevron"
+              }
               type="button"
               onClick={toggleSidebar}
             >
@@ -2184,7 +2496,36 @@ export default function DashboardPage() {
           </nav>
         </aside>
 
+        {isMobileViewport ? (
+          <button
+            aria-label="Close navigation menu"
+            className="asset-sidebar-overlay"
+            type="button"
+            onClick={() => setIsMobileSidebarOpen(false)}
+          />
+        ) : null}
+
         <section className="asset-content">
+          {isMobileViewport ? (
+            <div className="asset-mobile-toolbar">
+              <button
+                aria-expanded={isMobileSidebarOpen}
+                aria-label={isMobileSidebarOpen ? "Close navigation menu" : "Open navigation menu"}
+                className="asset-mobile-menu-button"
+                type="button"
+                onClick={() => setIsMobileSidebarOpen((current) => !current)}
+              >
+                <MenuIcon />
+                <span>{isMobileSidebarOpen ? "Close" : "Menu"}</span>
+              </button>
+
+              <div className="asset-mobile-toolbar-copy">
+                <span>Asset Portal</span>
+                <strong>{currentSidebarLabel}</strong>
+              </div>
+            </div>
+          ) : null}
+
           {isDashboardPanel
             ? renderDashboardPanel()
             : isAssetPanel
@@ -2340,6 +2681,84 @@ export default function DashboardPage() {
                       </label>
                     </div>
 
+                    <section className="asset-document-panel">
+                      <div className="asset-document-panel-header">
+                        <div>
+                          <h4>Documents (Optional)</h4>
+                          <p>Upload invoices, warranty cards, and repair bills for this asset.</p>
+                        </div>
+                      </div>
+
+                      {assetDocuments.length > 0 ? (
+                        <div className="asset-document-list">
+                          {assetDocuments.map((document) => (
+                            <article key={document.id} className="asset-document-item">
+                              <div className="asset-document-item-main">
+                                <span className="asset-document-icon">
+                                  <FileTextIcon />
+                                </span>
+                                <div className="asset-document-copy">
+                                  <strong>{document.documentType}</strong>
+                                  <span>
+                                    {document.file.name} ({formatFileSize(document.file.size)})
+                                  </span>
+                                </div>
+                              </div>
+
+                              <button
+                                className="asset-document-remove"
+                                type="button"
+                                onClick={() => removeQueuedDocument("single", document.id)}
+                              >
+                                Remove
+                              </button>
+                            </article>
+                          ))}
+                        </div>
+                      ) : null}
+
+                      <div className="asset-document-upload-grid">
+                        <label className="field">
+                          <span>Document Type</span>
+                          <select
+                            name="documentType"
+                            onChange={handleAssetDocumentDraftChange}
+                            value={assetDocumentDraft.documentType}
+                          >
+                            <option value="">Select document type</option>
+                            {DOCUMENT_TYPE_OPTIONS
+                              .filter((type) => !assetDocuments.some((document) => document.documentType === type))
+                              .map((type) => (
+                                <option key={type} value={type}>
+                                  {type}
+                                </option>
+                              ))}
+                          </select>
+                        </label>
+
+                        <label
+                          className={
+                            assetDocumentDraft.documentType
+                              ? "asset-upload-trigger"
+                              : "asset-upload-trigger asset-upload-trigger-disabled"
+                          }
+                        >
+                          <UploadIcon />
+                          <span>Upload</span>
+                          <input
+                            accept=".pdf,.jpg,.jpeg,.png"
+                            disabled={!assetDocumentDraft.documentType}
+                            onChange={(event) => queueDocumentForAsset(event, "single")}
+                            type="file"
+                          />
+                        </label>
+                      </div>
+
+                      <p className="asset-document-note">
+                        Supports PDF, JPG, and PNG files up to 5MB each.
+                      </p>
+                    </section>
+
                     {modalError ? <p className="message error-message">{modalError}</p> : null}
                   </div>
 
@@ -2477,6 +2896,86 @@ export default function DashboardPage() {
                         />
                       </label>
                     </div>
+
+                    <section className="asset-document-panel">
+                      <div className="asset-document-panel-header">
+                        <div>
+                          <h4>Shared Documents (Optional)</h4>
+                          <p>
+                            These documents will be attached to all {bulkAssetForm.quantity || "0"} assets created in this batch.
+                          </p>
+                        </div>
+                      </div>
+
+                      {bulkDocuments.length > 0 ? (
+                        <div className="asset-document-list">
+                          {bulkDocuments.map((document) => (
+                            <article key={document.id} className="asset-document-item">
+                              <div className="asset-document-item-main">
+                                <span className="asset-document-icon">
+                                  <FileTextIcon />
+                                </span>
+                                <div className="asset-document-copy">
+                                  <strong>{document.documentType}</strong>
+                                  <span>
+                                    {document.file.name} ({formatFileSize(document.file.size)})
+                                  </span>
+                                </div>
+                              </div>
+
+                              <button
+                                className="asset-document-remove"
+                                type="button"
+                                onClick={() => removeQueuedDocument("bulk", document.id)}
+                              >
+                                Remove
+                              </button>
+                            </article>
+                          ))}
+                        </div>
+                      ) : null}
+
+                      <div className="asset-document-upload-grid">
+                        <label className="field">
+                          <span>Document Type</span>
+                          <select
+                            name="documentType"
+                            onChange={handleBulkDocumentDraftChange}
+                            value={bulkDocumentDraft.documentType}
+                          >
+                            <option value="">Select document type</option>
+                            {DOCUMENT_TYPE_OPTIONS
+                              .filter((type) => !bulkDocuments.some((document) => document.documentType === type))
+                              .map((type) => (
+                                <option key={type} value={type}>
+                                  {type}
+                                </option>
+                              ))}
+                          </select>
+                        </label>
+
+                        <label
+                          className={
+                            bulkDocumentDraft.documentType
+                              ? "asset-upload-trigger"
+                              : "asset-upload-trigger asset-upload-trigger-disabled"
+                          }
+                        >
+                          <UploadIcon />
+                          <span>Upload</span>
+                          <input
+                            accept=".pdf,.jpg,.jpeg,.png"
+                            disabled={!bulkDocumentDraft.documentType}
+                            onChange={(event) => queueDocumentForAsset(event, "bulk")}
+                            type="file"
+                          />
+                        </label>
+                      </div>
+
+                      <p className="asset-document-note">
+                        Supports PDF, JPG, and PNG files up to 5MB each.
+                      </p>
+                    </section>
 
                     {modalError ? <p className="message error-message">{modalError}</p> : null}
                   </div>
@@ -3701,6 +4200,46 @@ export default function DashboardPage() {
                     onClick={handleRestoreAsset}
                   >
                     {isRestoringAsset ? "Restoring..." : "Restore"}
+                  </button>
+                </div>
+              </>
+            ) : activeModal.key === "logout-confirm" ? (
+              <>
+                <div className="asset-modal-header">
+                  <div>
+                    <p className="auth-modal-caption">Session</p>
+                    <h3>Confirm Logout</h3>
+                  </div>
+
+                  <button
+                    aria-label="Close logout confirmation dialog"
+                    className="modal-close-button"
+                    type="button"
+                    onClick={closeModal}
+                  >
+                    X
+                  </button>
+                </div>
+
+                <div className="asset-modal-scroll">
+                  <p className="asset-inline-warning">
+                    Are you sure you want to log out of the Asset Portal?
+                  </p>
+                  <p className="asset-empty-state">
+                    Any unsaved changes in open forms will be lost. You can sign in again anytime.
+                  </p>
+                </div>
+
+                <div className="asset-modal-footer">
+                  <button className="secondary-button" type="button" onClick={closeModal}>
+                    Cancel
+                  </button>
+                  <button
+                    className="primary-button primary-button-danger"
+                    type="button"
+                    onClick={handleConfirmLogout}
+                  >
+                    Logout
                   </button>
                 </div>
               </>

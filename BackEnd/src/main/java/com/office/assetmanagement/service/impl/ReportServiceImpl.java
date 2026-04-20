@@ -4,6 +4,7 @@ import com.office.assetmanagement.model.Asset;
 import com.office.assetmanagement.model.AssetDeletionLog;
 import com.office.assetmanagement.model.AssetStatusHistory;
 import com.office.assetmanagement.repo.AssetDeletionLogRepository;
+import com.office.assetmanagement.repo.AssetDocumentRepository;
 import com.office.assetmanagement.repo.AssetRepository;
 import com.office.assetmanagement.repo.AssetStatusHistoryRepository;
 import com.office.assetmanagement.report.dto.DetailedReportRowDto;
@@ -32,6 +33,7 @@ public class ReportServiceImpl implements ReportService {
 
     private final AssetRepository assetRepository;
     private final AssetDeletionLogRepository assetDeletionLogRepository;
+    private final AssetDocumentRepository assetDocumentRepository;
     private final AssetStatusHistoryRepository assetStatusHistoryRepository;
 
     @Override
@@ -44,9 +46,11 @@ public class ReportServiceImpl implements ReportService {
             int page,
             int size
     ) {
-        List<DetailedReportRowDto> filteredItems = assetRepository.findAllByStatusNotIgnoreCaseOrderByUpdatedAtDesc(DELETED_STATUS)
-                .stream()
-                .map(this::toDetailedRow)
+        List<Asset> assets = assetRepository.findAllByStatusNotIgnoreCaseOrderByUpdatedAtDesc(DELETED_STATUS);
+        Map<Long, Long> documentCounts = getDocumentCountMap(assets);
+
+        List<DetailedReportRowDto> filteredItems = assets.stream()
+                .map(asset -> toDetailedRow(asset, documentCounts.getOrDefault(asset.getId(), 0L)))
                 .filter(item -> matchesDetailedSearch(item, search))
                 .filter(item -> matchesFilter(item.getCategoryName(), category))
                 .filter(item -> matchesFilter(item.getStatus(), status))
@@ -130,7 +134,7 @@ public class ReportServiceImpl implements ReportService {
                 .build();
     }
 
-    private DetailedReportRowDto toDetailedRow(Asset asset) {
+    private DetailedReportRowDto toDetailedRow(Asset asset, long documentCount) {
         return DetailedReportRowDto.builder()
                 .assetId(asset.getId())
                 .assetDisplayId(AssetDisplayIdUtil.build(asset))
@@ -140,6 +144,7 @@ public class ReportServiceImpl implements ReportService {
                 .section(defaultText(asset.getSection()))
                 .seatNumber(defaultText(asset.getSeatNumber()))
                 .status(capitalize(asset.getStatus()))
+                .documentCount(documentCount)
                 .serialNumber(asset.getSerialNumber())
                 .brand(asset.getBrand())
                 .model(asset.getModel())
@@ -149,6 +154,20 @@ public class ReportServiceImpl implements ReportService {
                 .remarks(defaultText(asset.getRemarks()))
                 .updatedAt(asset.getUpdatedAt())
                 .build();
+    }
+
+    private Map<Long, Long> getDocumentCountMap(List<Asset> assets) {
+        if (assets.isEmpty()) {
+            return Map.of();
+        }
+
+        return assetDocumentRepository.countDocumentsByAssetIds(
+                        assets.stream().map(Asset::getId).toList()
+                ).stream()
+                .collect(LinkedHashMap::new, (map, projection) -> map.put(
+                        projection.getAssetId(),
+                        projection.getDocumentCount()
+                ), LinkedHashMap::putAll);
     }
 
     private HistoryReportRowDto toHistoryRow(AssetStatusHistory history) {
