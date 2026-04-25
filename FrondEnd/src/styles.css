@@ -1624,6 +1624,11 @@ input::placeholder {
   min-width: 860px;
 }
 
+.report-table-detailed-figma {
+  min-width: 1120px;
+  table-layout: fixed;
+}
+
 .report-table-history-figma {
   min-width: 940px;
   table-layout: fixed;
@@ -1672,6 +1677,104 @@ input::placeholder {
 .report-table-history-figma th,
 .report-table-history-figma td {
   padding: 0.78rem 0.68rem;
+}
+
+.report-table-detailed-figma th,
+.report-table-detailed-figma td {
+  padding: 0.72rem 0.56rem;
+  vertical-align: middle;
+}
+
+.report-table-detailed-figma thead th {
+  font-size: 0.82rem;
+}
+
+.report-table-detailed-figma tbody td {
+  font-size: 0.8rem;
+}
+
+.report-table-detailed-figma .report-sort-button {
+  gap: 0.35rem;
+  font-size: 0.82rem;
+}
+
+.report-table-detailed-figma .report-status-pill {
+  min-width: 82px;
+  padding: 0.32rem 0.54rem;
+  font-size: 0.74rem;
+}
+
+.report-table-detailed-figma .report-document-button {
+  min-height: 34px;
+  gap: 0.3rem;
+  padding: 0.42rem 0.56rem;
+  font-size: 0.72rem;
+}
+
+.report-table-detailed-figma .report-document-button-icon {
+  width: 0.82rem;
+  height: 0.82rem;
+}
+
+.report-table-detailed-figma .report-row-action-button {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 10px;
+}
+
+.report-table-detailed-figma .report-row-action-icon {
+  width: 0.88rem;
+  height: 0.88rem;
+}
+
+.report-table-detailed-figma th:nth-child(1),
+.report-table-detailed-figma td:nth-child(1) {
+  width: 8.5%;
+}
+
+.report-table-detailed-figma th:nth-child(2),
+.report-table-detailed-figma td:nth-child(2) {
+  width: 13%;
+}
+
+.report-table-detailed-figma th:nth-child(3),
+.report-table-detailed-figma td:nth-child(3) {
+  width: 13%;
+}
+
+.report-table-detailed-figma th:nth-child(4),
+.report-table-detailed-figma td:nth-child(4) {
+  width: 12%;
+}
+
+.report-table-detailed-figma th:nth-child(5),
+.report-table-detailed-figma td:nth-child(5) {
+  width: 10%;
+}
+
+.report-table-detailed-figma th:nth-child(6),
+.report-table-detailed-figma td:nth-child(6) {
+  width: 11%;
+}
+
+.report-table-detailed-figma th:nth-child(7),
+.report-table-detailed-figma td:nth-child(7) {
+  width: 10%;
+}
+
+.report-table-detailed-figma th:nth-child(8),
+.report-table-detailed-figma td:nth-child(8) {
+  width: 10%;
+}
+
+.report-table-detailed-figma th:nth-child(9),
+.report-table-detailed-figma td:nth-child(9) {
+  width: 8%;
+}
+
+.report-table-detailed-figma th:nth-child(10),
+.report-table-detailed-figma td:nth-child(10) {
+  width: 4.5%;
 }
 
 .report-table-history-figma thead th {

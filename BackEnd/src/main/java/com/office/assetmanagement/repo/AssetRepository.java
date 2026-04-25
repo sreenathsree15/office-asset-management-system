@@ -7,6 +7,10 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface AssetRepository extends JpaRepository<Asset, Long> {
 
+    boolean existsByAssetNameIgnoreCase(String assetName);
+
+    boolean existsByAssetNameIgnoreCaseAndIdNot(String assetName, Long id);
+
     boolean existsBySerialNumberIgnoreCase(String serialNumber);
 
     boolean existsBySerialNumberIgnoreCaseAndIdNot(String serialNumber, Long id);

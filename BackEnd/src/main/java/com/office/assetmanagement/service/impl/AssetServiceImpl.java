@@ -36,11 +36,14 @@ import com.office.assetmanagement.util.AssetDisplayIdUtil;
 import com.office.assetmanagement.util.SerialNumberGenerator;
 import jakarta.transaction.Transactional;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.Locale;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -67,6 +70,7 @@ public class AssetServiceImpl implements AssetService {
     private static final String DEFAULT_ACTION_USER = "Admin";
     private static final int MAX_SERIAL_GENERATION_ATTEMPTS = 10000;
     private static final Set<String> SEAT_REQUIRED_CATEGORIES = Set.of("desktop", "printer", "ups");
+    private static final DateTimeFormatter BULK_BATCH_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
 
     private final AssetRepository assetRepository;
     private final AssetDeletionLogRepository assetDeletionLogRepository;
@@ -80,8 +84,13 @@ public class AssetServiceImpl implements AssetService {
     @Override
     @Transactional
     public Asset createSingleAsset(AssetSingleDto assetSingleDto) {
+        String assetName = normalize(assetSingleDto.getAssetName());
         String serialNumber = normalize(assetSingleDto.getSerialNumber());
         Category category = findCategory(assetSingleDto.getCategoryId());
+
+        if (assetRepository.existsByAssetNameIgnoreCase(assetName)) {
+            throw new IllegalArgumentException("Asset name already exists.");
+        }
 
         if (assetRepository.existsBySerialNumberIgnoreCase(serialNumber)) {
             throw new IllegalArgumentException("Serial number already exists.");
@@ -90,11 +99,12 @@ public class AssetServiceImpl implements AssetService {
         validateWarrantyDates(assetSingleDto.getPurchaseDate(), assetSingleDto.getWarrantyExpiryDate());
 
         Asset asset = buildAsset(
-                assetSingleDto.getAssetName(),
+                assetName,
                 category,
                 assetSingleDto.getBrand(),
                 assetSingleDto.getModel(),
                 serialNumber,
+                null,
                 assetSingleDto.getPurchaseDate(),
                 assetSingleDto.getWarrantyExpiryDate(),
                 assetSingleDto.getRemarks()
@@ -121,6 +131,7 @@ public class AssetServiceImpl implements AssetService {
         List<Asset> assetsToSave = new ArrayList<>(assetBulkDto.getQuantity());
         Set<String> generatedSerialNumbers = new HashSet<>();
         LocalDate serialReferenceDate = LocalDate.now();
+        String batchId = generateBulkBatchId();
         long sequence = 1L;
 
         for (int index = 0; index < assetBulkDto.getQuantity(); index++) {
@@ -133,6 +144,7 @@ public class AssetServiceImpl implements AssetService {
                     assetBulkDto.getBrand(),
                     assetBulkDto.getModel(),
                     serialNumber,
+                    batchId,
                     assetBulkDto.getPurchaseDate(),
                     assetBulkDto.getWarrantyExpiryDate(),
                     assetBulkDto.getRemarks()
@@ -229,9 +241,14 @@ public class AssetServiceImpl implements AssetService {
         }
 
         Category category = findCategory(assetUpdateDto.getCategoryId());
+        String assetName = normalize(assetUpdateDto.getAssetName());
         String serialNumber = normalize(assetUpdateDto.getSerialNumber());
 
         validateWarrantyDates(assetUpdateDto.getPurchaseDate(), assetUpdateDto.getWarrantyExpiryDate());
+
+        if (assetRepository.existsByAssetNameIgnoreCaseAndIdNot(assetName, assetId)) {
+            throw new IllegalArgumentException("Asset name already exists.");
+        }
 
         if (assetRepository.existsBySerialNumberIgnoreCaseAndIdNot(serialNumber, assetId)) {
             throw new IllegalArgumentException("Serial number already exists.");
@@ -244,7 +261,7 @@ public class AssetServiceImpl implements AssetService {
             throw new IllegalArgumentException("Use Assign Asset to move an asset into Assigned status.");
         }
 
-        asset.setAssetName(normalize(assetUpdateDto.getAssetName()));
+        asset.setAssetName(assetName);
         asset.setCategory(category);
         asset.setBrand(normalize(assetUpdateDto.getBrand()));
         asset.setModel(normalize(assetUpdateDto.getModel()));
@@ -635,8 +652,10 @@ public class AssetServiceImpl implements AssetService {
     }
 
     private void validateWarrantyDates(LocalDate purchaseDate, LocalDate warrantyExpiryDate) {
-        if (warrantyExpiryDate.isBefore(purchaseDate)) {
-            throw new IllegalArgumentException("Warranty expiry date cannot be before purchase date.");
+        if (!warrantyExpiryDate.isAfter(purchaseDate)) {
+            throw new IllegalArgumentException(
+                    "Warranty expiry date must be later than the purchase date."
+            );
         }
     }
 
@@ -665,6 +684,7 @@ public class AssetServiceImpl implements AssetService {
             String brand,
             String model,
             String serialNumber,
+            String batchId,
             LocalDate purchaseDate,
             LocalDate warrantyExpiryDate,
             String remarks
@@ -675,11 +695,19 @@ public class AssetServiceImpl implements AssetService {
                 .brand(normalize(brand))
                 .model(normalize(model))
                 .serialNumber(normalize(serialNumber))
+                .batchId(normalizeOptional(batchId))
                 .purchaseDate(purchaseDate)
                 .warrantyExpiryDate(warrantyExpiryDate)
                 .status(AVAILABLE_STATUS)
                 .remarks(normalizeOptional(remarks))
                 .build();
+    }
+
+    private String generateBulkBatchId() {
+        return "BULK-%s-%s".formatted(
+                LocalDateTime.now().format(BULK_BATCH_FORMATTER),
+                UUID.randomUUID().toString().substring(0, 8).toUpperCase(Locale.ROOT)
+        );
     }
 
     private String generateUniqueSerialNumber(

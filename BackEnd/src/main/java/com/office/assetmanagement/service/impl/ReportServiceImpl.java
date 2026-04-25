@@ -146,6 +146,7 @@ public class ReportServiceImpl implements ReportService {
                 .status(capitalize(asset.getStatus()))
                 .documentCount(documentCount)
                 .serialNumber(asset.getSerialNumber())
+                .batchId(defaultText(asset.getBatchId()))
                 .brand(asset.getBrand())
                 .model(asset.getModel())
                 .purchaseDate(asset.getPurchaseDate())
@@ -208,6 +209,8 @@ public class ReportServiceImpl implements ReportService {
             case "employeename" -> comparingText(DetailedReportRowDto::getEmployeeName);
             case "section" -> comparingText(DetailedReportRowDto::getSection);
             case "status" -> comparingText(DetailedReportRowDto::getStatus);
+            case "serialnumber" -> comparingText(DetailedReportRowDto::getSerialNumber);
+            case "batchid" -> comparingText(DetailedReportRowDto::getBatchId);
             default -> comparingText(DetailedReportRowDto::getAssetDisplayId);
         };
 
@@ -228,7 +231,8 @@ public class ReportServiceImpl implements ReportService {
                         item.getEmployeeName(),
                         item.getSection(),
                         item.getSeatNumber(),
-                        item.getSerialNumber()
+                        item.getSerialNumber(),
+                        item.getBatchId()
                 ).stream()
                 .map(this::normalize)
                 .anyMatch(value -> value.contains(query));

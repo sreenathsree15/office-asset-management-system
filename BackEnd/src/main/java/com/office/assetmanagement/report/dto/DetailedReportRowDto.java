@@ -35,6 +35,8 @@ public class DetailedReportRowDto {
 
     private String serialNumber;
 
+    private String batchId;
+
     private String brand;
 
     private String model;

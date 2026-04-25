@@ -1024,6 +1024,8 @@ export default function ReportsPanelFigma({
         [
           "Asset ID",
           "Asset Name",
+          "Serial Number",
+          "Batch ID",
           "Category",
           "Employee Name",
           "Section",
@@ -1041,6 +1043,8 @@ export default function ReportsPanelFigma({
         ...items.map((item) => ([
           item.assetDisplayId,
           item.assetName,
+          item.serialNumber,
+          item.batchId,
           item.categoryName,
           item.employeeName,
           item.section,
@@ -1083,6 +1087,8 @@ export default function ReportsPanelFigma({
         <tr>
           <td>${escapeHtml(item.assetDisplayId)}</td>
           <td>${escapeHtml(item.assetName)}</td>
+          <td>${escapeHtml(item.serialNumber)}</td>
+          <td>${escapeHtml(item.batchId)}</td>
           <td>${escapeHtml(item.categoryName)}</td>
           <td>${escapeHtml(item.employeeName)}</td>
           <td>${escapeHtml(item.section)}</td>
@@ -1112,6 +1118,8 @@ export default function ReportsPanelFigma({
                 <tr>
                   <th>Asset ID</th>
                   <th>Asset Name</th>
+                  <th>Serial Number</th>
+                  <th>Batch ID</th>
                   <th>Category</th>
                   <th>Employee Name</th>
                   <th>Section</th>
@@ -1549,7 +1557,7 @@ export default function ReportsPanelFigma({
             <input
               name="search"
               onChange={handleDetailedFilterChange}
-              placeholder="Search by Asset ID, Name, Employee, Section"
+              placeholder="Search by Asset ID, Name, Serial, Batch, Employee, Section"
               type="text"
               value={detailedFilters.search}
             />
@@ -1589,7 +1597,7 @@ export default function ReportsPanelFigma({
 
       <section className="report-table-card">
         <div className="report-table-scroll">
-          <table className="report-table">
+          <table className="report-table report-table-detailed-figma">
             <thead>
               <tr>
                 <th>
@@ -1604,6 +1612,18 @@ export default function ReportsPanelFigma({
                     <ArrowUpDownIcon className="report-sort-icon" />
                   </button>
                 </th>
+                <th>
+                  <button className="report-sort-button" type="button" onClick={() => handleDetailedSort("serialNumber")}>
+                    <span>Serial Number</span>
+                    <ArrowUpDownIcon className="report-sort-icon" />
+                  </button>
+                </th>
+                <th>
+                  <button className="report-sort-button" type="button" onClick={() => handleDetailedSort("batchId")}>
+                    <span>Batch ID</span>
+                    <ArrowUpDownIcon className="report-sort-icon" />
+                  </button>
+                </th>
                 <th>Category</th>
                 <th>Employee Name</th>
                 <th>Section</th>
@@ -1615,17 +1635,19 @@ export default function ReportsPanelFigma({
             <tbody>
               {isLoadingDetailed ? (
                 <tr>
-                  <td className="report-empty-cell" colSpan="8">Loading report...</td>
+                  <td className="report-empty-cell" colSpan="10">Loading report...</td>
                 </tr>
               ) : detailedReport.items.length === 0 ? (
                 <tr>
-                  <td className="report-empty-cell" colSpan="8">No assets match the selected filters.</td>
+                  <td className="report-empty-cell" colSpan="10">No assets match the selected filters.</td>
                 </tr>
               ) : (
                 detailedReport.items.map((item) => (
                   <tr key={item.assetId}>
                     <td>{item.assetDisplayId}</td>
                     <td>{item.assetName}</td>
+                    <td>{item.serialNumber}</td>
+                    <td>{item.batchId}</td>
                     <td>{item.categoryName}</td>
                     <td>{item.employeeName}</td>
                     <td>{item.section}</td>

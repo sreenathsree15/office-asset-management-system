@@ -1553,6 +1553,16 @@ export default function DashboardPage() {
     setPageError("");
     setPageNotice("");
     setModalError("");
+
+    if (
+      assetForm.purchaseDate &&
+      assetForm.warrantyExpiryDate &&
+      assetForm.purchaseDate === assetForm.warrantyExpiryDate
+    ) {
+      setModalError("Warranty expiry date must be later than the purchase date.");
+      return;
+    }
+
     setIsSavingAsset(true);
 
     try {

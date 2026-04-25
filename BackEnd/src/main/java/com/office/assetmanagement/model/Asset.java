@@ -48,6 +48,9 @@ public class Asset {
     @Column(name = "serial_number", nullable = false, unique = true, length = 100)
     private String serialNumber;
 
+    @Column(name = "batch_id", length = 80)
+    private String batchId;
+
     @Column(name = "purchase_date", nullable = false)
     private LocalDate purchaseDate;
 
