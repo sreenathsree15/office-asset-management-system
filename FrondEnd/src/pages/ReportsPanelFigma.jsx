@@ -1614,22 +1614,24 @@ export default function ReportsPanelFigma({
                 </th>
                 <th>
                   <button className="report-sort-button" type="button" onClick={() => handleDetailedSort("serialNumber")}>
-                    <span>Serial Number</span>
+                    <span>Serial No.</span>
                     <ArrowUpDownIcon className="report-sort-icon" />
                   </button>
                 </th>
                 <th>
                   <button className="report-sort-button" type="button" onClick={() => handleDetailedSort("batchId")}>
-                    <span>Batch ID</span>
+                    <span>Batch</span>
                     <ArrowUpDownIcon className="report-sort-icon" />
                   </button>
                 </th>
                 <th>Category</th>
-                <th>Employee Name</th>
+                <th>Employee</th>
                 <th>Section</th>
-                <th className="report-documents-column">Documents</th>
+                <th className="report-documents-column">Docs</th>
                 <th>Status</th>
-                <th className="report-action-column">Delete</th>
+                <th className="report-action-column" title="Delete">
+                  <TrashIcon className="report-column-icon" />
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -1645,12 +1647,12 @@ export default function ReportsPanelFigma({
                 detailedReport.items.map((item) => (
                   <tr key={item.assetId}>
                     <td>{item.assetDisplayId}</td>
-                    <td>{item.assetName}</td>
-                    <td>{item.serialNumber}</td>
-                    <td>{item.batchId}</td>
-                    <td>{item.categoryName}</td>
-                    <td>{item.employeeName}</td>
-                    <td>{item.section}</td>
+                    <td><span className="report-cell-ellipsis" title={item.assetName}>{item.assetName}</span></td>
+                    <td><span className="report-cell-ellipsis" title={item.serialNumber}>{item.serialNumber}</span></td>
+                    <td><span className="report-cell-ellipsis" title={item.batchId}>{item.batchId}</span></td>
+                    <td><span className="report-cell-ellipsis" title={item.categoryName}>{item.categoryName}</span></td>
+                    <td><span className="report-cell-ellipsis" title={item.employeeName}>{item.employeeName}</span></td>
+                    <td><span className="report-cell-ellipsis" title={item.section}>{item.section}</span></td>
                     <td className="report-documents-cell">
                       {Number(item.documentCount ?? 0) > 0 ? (
                         <button
@@ -1674,8 +1676,8 @@ export default function ReportsPanelFigma({
                         </button>
                       )}
                     </td>
-                    <td><span className={statusClassName(item.status)}>{item.status}</span></td>
-                    <td>
+                    <td className="report-status-cell"><span className={statusClassName(item.status)}>{item.status}</span></td>
+                    <td className="report-delete-cell">
                       <button
                         aria-label={`Delete ${item.assetName}`}
                         className="report-row-action-button report-row-action-button-danger"

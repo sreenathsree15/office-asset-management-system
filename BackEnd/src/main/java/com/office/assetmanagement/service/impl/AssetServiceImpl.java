@@ -280,7 +280,20 @@ public class AssetServiceImpl implements AssetService {
 
             asset.setAssignedTo(assignedTo);
 
-            if (!requiresSeatNumber(category.getName())) {
+            if (requiresSeatNumber(category.getName())) {
+                String currentSection = normalize(asset.getSection());
+                String currentSeatNumber = normalize(asset.getSeatNumber());
+
+                if (currentSection.isEmpty() || currentSeatNumber.isEmpty()) {
+                    throw new IllegalArgumentException(
+                            "Assigned Desktop, Printer, and UPS assets must have a valid section and seat number. Use Reassign Asset to update the assignment details."
+                    );
+                }
+
+                asset.setSeatNumber(
+                        resolveAssignedSeatNumber(category.getName(), currentSection, currentSeatNumber)
+                );
+            } else {
                 asset.setSeatNumber(null);
             }
         }
@@ -358,6 +371,10 @@ public class AssetServiceImpl implements AssetService {
                 .orElseThrow(() -> new IllegalArgumentException("Selected asset is not currently available."));
         String sectionName = normalize(assetAssignDto.getSection());
         String normalizedSeatNumber = normalize(assetAssignDto.getSeatNumber());
+
+        if (assetAssignDto.getDateOfIssue().isBefore(asset.getPurchaseDate())) {
+            throw new IllegalArgumentException("Date of issue cannot be before purchase date.");
+        }
 
         asset.setStatus(ASSIGNED_STATUS);
         asset.setAssignedTo(normalize(assetAssignDto.getAssignedTo()));

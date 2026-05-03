@@ -5,13 +5,17 @@ import com.office.assetmanagement.dto.AdminNameUpdateRequest;
 import com.office.assetmanagement.dto.AdminNameUpdateResponse;
 import com.office.assetmanagement.dto.AdminPasswordUpdateRequest;
 import com.office.assetmanagement.dto.BasicMessageResponse;
+import com.office.assetmanagement.dto.CategoryRequestDto;
+import com.office.assetmanagement.dto.CategoryResponseDto;
 import com.office.assetmanagement.dto.SeatNumberRequestDto;
 import com.office.assetmanagement.dto.SeatNumberResponseDto;
 import com.office.assetmanagement.dto.SectionRequestDto;
 import com.office.assetmanagement.dto.SectionResponseDto;
+import com.office.assetmanagement.model.Category;
 import com.office.assetmanagement.model.Section;
 import com.office.assetmanagement.model.SeatNumber;
 import com.office.assetmanagement.model.UserAdmin;
+import com.office.assetmanagement.repo.CategoryRepository;
 import com.office.assetmanagement.repo.SectionRepository;
 import com.office.assetmanagement.repo.SeatNumberRepository;
 import com.office.assetmanagement.repo.UserAdminRepository;
@@ -29,11 +33,31 @@ public class AdminModuleServiceImpl implements AdminModuleService {
 
     private static final String ACTIVE_STATUS = "N";
 
+    private final CategoryRepository categoryRepository;
     private final SectionRepository sectionRepository;
     private final SeatNumberRepository seatNumberRepository;
     private final UserAdminRepository userAdminRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+
+    @Override
+    @Transactional
+    public CategoryResponseDto createCategory(CategoryRequestDto categoryRequestDto) {
+        String categoryName = normalize(categoryRequestDto.getName());
+
+        if (categoryRepository.existsByNameIgnoreCase(categoryName)) {
+            throw new IllegalArgumentException("Category name already exists.");
+        }
+
+        Category category = categoryRepository.save(Category.builder()
+                .name(categoryName)
+                .build());
+
+        return CategoryResponseDto.builder()
+                .id(category.getId())
+                .name(category.getName())
+                .build();
+    }
 
     @Override
     public List<SectionResponseDto> listSections() {

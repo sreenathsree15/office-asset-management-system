@@ -4,6 +4,8 @@ import com.office.assetmanagement.dto.AdminNameUpdateRequest;
 import com.office.assetmanagement.dto.AdminNameUpdateResponse;
 import com.office.assetmanagement.dto.AdminPasswordUpdateRequest;
 import com.office.assetmanagement.dto.BasicMessageResponse;
+import com.office.assetmanagement.dto.CategoryRequestDto;
+import com.office.assetmanagement.dto.CategoryResponseDto;
 import com.office.assetmanagement.dto.SeatNumberRequestDto;
 import com.office.assetmanagement.dto.SeatNumberResponseDto;
 import com.office.assetmanagement.dto.SectionRequestDto;
@@ -30,6 +32,14 @@ import org.springframework.web.bind.annotation.RestController;
 public class AdminController {
 
     private final AdminModuleService adminModuleService;
+
+    @PostMapping("/categories")
+    public ResponseEntity<CategoryResponseDto> createCategory(
+            @Valid @RequestBody CategoryRequestDto categoryRequestDto
+    ) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(adminModuleService.createCategory(categoryRequestDto));
+    }
 
     @GetMapping("/sections")
     public ResponseEntity<List<SectionResponseDto>> listSections() {

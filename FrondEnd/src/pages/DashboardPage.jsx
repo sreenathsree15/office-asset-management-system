@@ -104,6 +104,12 @@ const ACTION_CARDS = [
 
 const ADMIN_ACTION_CARDS = [
   {
+    key: "add-category",
+    icon: PackageIcon,
+    title: "Add Category",
+    description: "Create new asset categories for future asset entries."
+  },
+  {
     key: "add-section",
     icon: BuildingIcon,
     title: "Add Section",
@@ -248,6 +254,10 @@ const createEmptySectionForm = () => ({
   sectionName: "",
   sectionCode: "",
   description: ""
+});
+
+const createEmptyCategoryForm = () => ({
+  name: ""
 });
 
 const createEmptySeatNumberForm = () => ({
@@ -433,6 +443,7 @@ export default function DashboardPage() {
   const [isSavingDamagedAsset, setIsSavingDamagedAsset] = useState(false);
   const [isSavingExpiredAsset, setIsSavingExpiredAsset] = useState(false);
   const [isSavingReturnAsset, setIsSavingReturnAsset] = useState(false);
+  const [isSavingCategory, setIsSavingCategory] = useState(false);
   const [isSavingSection, setIsSavingSection] = useState(false);
   const [isSavingSeatNumber, setIsSavingSeatNumber] = useState(false);
   const [isSavingAdminName, setIsSavingAdminName] = useState(false);
@@ -451,6 +462,7 @@ export default function DashboardPage() {
   const [returnAssetForm, setReturnAssetForm] = useState(createEmptyReturnAssetForm);
   const [damagedAssetForm, setDamagedAssetForm] = useState(createEmptyDamagedAssetForm);
   const [expiredAssetForm, setExpiredAssetForm] = useState(createEmptyExpiredAssetForm);
+  const [categoryForm, setCategoryForm] = useState(createEmptyCategoryForm);
   const [sectionForm, setSectionForm] = useState(createEmptySectionForm);
   const [seatNumberForm, setSeatNumberForm] = useState(createEmptySeatNumberForm);
   const [adminNameForm, setAdminNameForm] = useState(() => createAdminNameForm(user?.username ?? ""));
@@ -482,6 +494,7 @@ export default function DashboardPage() {
     activeModal?.key === "mark-damaged" ||
     activeModal?.key === "mark-expired" ||
     activeModal?.key === "return-asset" ||
+    activeModal?.key === "add-category" ||
     activeModal?.key === "add-section" ||
     activeModal?.key === "add-seat" ||
     activeModal?.key === "admin-profile";
@@ -514,6 +527,9 @@ export default function DashboardPage() {
   const sectionNameConflict = sections.find((section) => (
     normalizeText(section.sectionName) === normalizeText(sectionForm.sectionName) &&
     String(section.id) !== String(sectionForm.id)
+  ));
+  const categoryNameConflict = categories.find((category) => (
+    normalizeText(category.name) === normalizeText(categoryForm.name)
   ));
   const selectedAssignSection = sections.find(
     (section) => normalizeText(section.sectionName) === normalizeText(assignAssetForm.section)
@@ -674,6 +690,22 @@ export default function DashboardPage() {
 
     const payload = await parseResponse(response);
     return Array.isArray(payload) ? payload : [];
+  };
+
+  const fetchCategories = async () => {
+    const response = await fetch(`${API_BASE_URL}/api/categories`, {
+      method: "GET",
+      headers: authHeaders
+    });
+
+    const payload = await parseResponse(response);
+    return Array.isArray(payload) ? payload : [];
+  };
+
+  const refreshCategoriesData = async () => {
+    const payload = await fetchCategories();
+    setCategories(payload);
+    return payload;
   };
 
   const fetchSections = async () => {
@@ -941,10 +973,7 @@ export default function DashboardPage() {
 
       try {
         const [categoryPayload, summaryPayload, sectionPayload, seatNumberPayload, warrantyPayload] = await Promise.all([
-          fetch(`${API_BASE_URL}/api/categories`, {
-            method: "GET",
-            headers: authHeaders
-          }).then(parseResponse),
+          fetchCategories(),
           fetch(`${API_BASE_URL}/api/assets/summary`, {
             method: "GET",
             headers: authHeaders
@@ -1143,6 +1172,10 @@ export default function DashboardPage() {
       setSectionForm(createEmptySectionForm());
     }
 
+    if (card.key === "add-category") {
+      setCategoryForm(createEmptyCategoryForm());
+    }
+
     if (card.key === "add-seat") {
       setSeatNumberForm(createEmptySeatNumberForm());
     }
@@ -1214,6 +1247,7 @@ export default function DashboardPage() {
     setIsSavingDamagedAsset(false);
     setIsSavingExpiredAsset(false);
     setIsSavingReturnAsset(false);
+    setIsSavingCategory(false);
     setIsSavingSection(false);
     setIsSavingSeatNumber(false);
     setIsSavingAdminName(false);
@@ -1224,6 +1258,7 @@ export default function DashboardPage() {
     setAssetDocumentDraft(createEmptyQueuedDocumentDraft());
     setBulkDocumentDraft(createEmptyQueuedDocumentDraft());
     setDeleteAssetForm(createEmptyDeleteAssetForm());
+    setCategoryForm(createEmptyCategoryForm());
     setSectionForm(createEmptySectionForm());
     setSeatNumberForm(createEmptySeatNumberForm());
     setAdminNameForm(createAdminNameForm(user?.username ?? ""));
@@ -1249,7 +1284,7 @@ export default function DashboardPage() {
     setIsMobileSidebarOpen(false);
 
     if (item.key === "admin-control") {
-      Promise.all([refreshSectionsData(), refreshSeatNumbersData()]).catch((error) => {
+      Promise.all([refreshCategoriesData(), refreshSectionsData(), refreshSeatNumbersData()]).catch((error) => {
         setPageError(error.message);
       });
     }
@@ -1528,6 +1563,12 @@ export default function DashboardPage() {
     const { name, value } = event.target;
     setModalError("");
     setSectionForm((current) => ({ ...current, [name]: value }));
+  };
+
+  const handleCategoryFormChange = (event) => {
+    const { name, value } = event.target;
+    setModalError("");
+    setCategoryForm((current) => ({ ...current, [name]: value }));
   };
 
   const handleSeatNumberFormChange = (event) => {
@@ -2019,6 +2060,42 @@ export default function DashboardPage() {
     }
   };
 
+  const handleSaveCategory = async (event) => {
+    event.preventDefault();
+    setPageError("");
+    setPageNotice("");
+    setModalError("");
+
+    if (categoryNameConflict) {
+      setModalError(`Category name "${categoryForm.name}" already exists.`);
+      return;
+    }
+
+    setIsSavingCategory(true);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/admin/categories`, {
+        method: "POST",
+        headers: {
+          ...authHeaders,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          name: categoryForm.name
+        })
+      });
+
+      const payload = await parseResponse(response);
+      await refreshCategoriesData();
+      closeModal();
+      setPageNotice(`Category "${payload.name}" saved successfully.`);
+    } catch (error) {
+      setModalError(error.message);
+    } finally {
+      setIsSavingCategory(false);
+    }
+  };
+
   const handleSaveSeatNumber = async (event) => {
     event.preventDefault();
     setPageError("");
@@ -2327,7 +2404,7 @@ export default function DashboardPage() {
         <div>
           <h1>Admin Control</h1>
           <p className="dashboard-user">
-            Manage sections, seat numbers, and profile settings for the administrator account.
+            Manage categories, sections, seat numbers, and profile settings for the administrator account.
           </p>
         </div>
       </header>
@@ -2336,6 +2413,10 @@ export default function DashboardPage() {
         <article className="asset-summary-card">
           <span>Current Admin</span>
           <strong>{user?.username ?? "Admin"}</strong>
+        </article>
+        <article className="asset-summary-card">
+          <span>Categories</span>
+          <strong>{categories.length}</strong>
         </article>
         <article className="asset-summary-card">
           <span>Sections</span>
@@ -2360,6 +2441,33 @@ export default function DashboardPage() {
             </div>
           </button>
         ))}
+      </section>
+
+      <section className="admin-section-panel">
+        <div className="admin-section-panel-header">
+          <div>
+            <p className="eyebrow">Saved Categories</p>
+          </div>
+        </div>
+
+        {isLoadingCategories ? (
+          <p className="asset-empty-state">Loading categories from the database...</p>
+        ) : categories.length === 0 ? (
+          <p className="asset-empty-state">
+            No categories have been saved yet. Add a category and it will appear here and in the
+            asset entry forms.
+          </p>
+        ) : (
+          <div className="admin-section-grid">
+            {categories.map((category) => (
+              <article key={category.id} className="admin-section-card">
+                <strong>{category.name}</strong>
+                <span>Available in asset entry dropdowns</span>
+                <p>Use this category in Add New Asset and Bulk Add Assets.</p>
+              </article>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="admin-section-panel">
@@ -4252,6 +4360,69 @@ export default function DashboardPage() {
                     Logout
                   </button>
                 </div>
+              </>
+            ) : activeModal.key === "add-category" ? (
+              <>
+                <div className="asset-modal-header">
+                  <div>
+                    <p className="auth-modal-caption">Admin Control</p>
+                    <h3>Add Category</h3>
+                  </div>
+
+                  <button
+                    aria-label="Close add category dialog"
+                    className="modal-close-button"
+                    type="button"
+                    onClick={closeModal}
+                  >
+                    X
+                  </button>
+                </div>
+
+                <form className="asset-form" onSubmit={handleSaveCategory}>
+                  <div className="asset-modal-scroll">
+                    <div className="asset-form-grid">
+                      <label className="field asset-field-full">
+                        <span>Category Name</span>
+                        <input
+                          name="name"
+                          onChange={handleCategoryFormChange}
+                          placeholder="Enter category name"
+                          type="text"
+                          value={categoryForm.name}
+                        />
+                      </label>
+
+                      {categoryNameConflict ? (
+                        <div className="asset-field-full">
+                          <p className="asset-inline-error">
+                            Category name already exists. Use a different category name.
+                          </p>
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <p className="asset-empty-state">
+                      Saved categories will automatically appear in the category dropdown for Add
+                      New Asset and Bulk Add Assets.
+                    </p>
+
+                    {modalError ? <p className="message error-message">{modalError}</p> : null}
+                  </div>
+
+                  <div className="asset-modal-footer">
+                    <button className="secondary-button" type="button" onClick={closeModal}>
+                      Cancel
+                    </button>
+                    <button
+                      className="primary-button"
+                      disabled={isSavingCategory || Boolean(categoryNameConflict)}
+                      type="submit"
+                    >
+                      {isSavingCategory ? "Saving..." : "Save"}
+                    </button>
+                  </div>
+                </form>
               </>
             ) : activeModal.key === "add-section" ? (
               <>

@@ -4,6 +4,8 @@ import com.office.assetmanagement.dto.AdminNameUpdateRequest;
 import com.office.assetmanagement.dto.AdminNameUpdateResponse;
 import com.office.assetmanagement.dto.AdminPasswordUpdateRequest;
 import com.office.assetmanagement.dto.BasicMessageResponse;
+import com.office.assetmanagement.dto.CategoryRequestDto;
+import com.office.assetmanagement.dto.CategoryResponseDto;
 import com.office.assetmanagement.dto.SeatNumberRequestDto;
 import com.office.assetmanagement.dto.SeatNumberResponseDto;
 import com.office.assetmanagement.dto.SectionRequestDto;
@@ -11,6 +13,8 @@ import com.office.assetmanagement.dto.SectionResponseDto;
 import java.util.List;
 
 public interface AdminModuleService {
+
+    CategoryResponseDto createCategory(CategoryRequestDto categoryRequestDto);
 
     List<SectionResponseDto> listSections();
 
